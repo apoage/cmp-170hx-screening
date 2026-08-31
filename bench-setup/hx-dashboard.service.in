@@ -1,0 +1,21 @@
+[Unit]
+Description=CMP 170HX screening dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@BASE@
+Environment=HX_BASE=@BASE@
+Environment=HX_PORT=@PORT@
+ExecStart=/usr/bin/python3 @HERE@/bin/hx-dashboard.py
+# A bench runs for weeks unattended; the dashboard is read-only, so restarting
+# it can never disturb a screen in progress. Verified surviving kill -9.
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

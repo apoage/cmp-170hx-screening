@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash syntax
+        run: bash -n bin/hx-vram-screen.sh install.sh bench-setup/hx-install-unlock.sh
+
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y shellcheck
+          shellcheck -S warning bin/hx-vram-screen.sh install.sh bench-setup/hx-install-unlock.sh
+
+      - name: python compile
+        run: python3 -m py_compile bin/hx-thermal-analyze.py bin/hx-dashboard.py bin/hx-tui.py
+
+      - name: thermal analyzer against a recorded curve
+        # Guards the one piece that can be tested without a GPU: the analyser is
+        # pure CSV in, markdown out, so a fixture catches a regression in the
+        # C/W maths or the verdict logic before it reaches a customer report.
+        run: |
+          python3 bin/hx-thermal-analyze.py tests/fixtures/telemetry-pass.csv 2 > /tmp/out.md
+          cat /tmp/out.md
+          grep -q "Thermal verdict:" /tmp/out.md
+          grep -q "FLEET," /tmp/out.md
