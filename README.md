@@ -41,6 +41,7 @@ taken on trust from a single vendor tool:
 |---|---|---|
 | The card is **this** card | Report is named after the GPU serial read off the card, with the UUID alongside | A report can never be filed against the wrong unit; duplicate serials are disambiguated by UUID |
 | It really has **64 GiB** | `vulkaninfo` DEVICE_LOCAL heap, matched to this card by `deviceUUID` | Khronos Vulkan is a **non-NVIDIA** path — independent corroboration of `nvidia-smi` |
+| The HBM runs at **full speed** | STREAM-style kernels vs a peak derived from the card's own bus width and memory clock | Nothing is looked up from a spec sheet; both operands are read off the device |
 | The memory is **sound** | `memtest_vulkan` pattern test over the whole free heap, on a verified-idle GPU | Coverage is a stated number of GiB, not "whatever the tool grabbed" |
 | The cooling is **intact** | Per-sample telemetry through the run → °C/W for core and HBM, compared against the batch median | Identical workload on every card ⇒ near-identical power ⇒ temperature is a direct read-out of heat transfer |
 
@@ -81,12 +82,47 @@ card is still climbing at 84 s; a short run cannot distinguish "hot card" from
 "not settled yet", and the analyser disables the plateau check below 5 min
 rather than print a number it cannot stand behind.
 
+### Memory throughput
+
+Soundness and speed are different claims. A card can pass the memory test and
+still be slow, so throughput is measured separately:
+
+```console
+$ ~/vllm-env/bin/python bin/hx-bandwidth.py       # needs torch + CUDA
+card        : NVIDIA CMP 170HX  (70 SMs, 68.2 GB, 34 MB L2)
+memory      : 4096-bit HBM2e @ 1.728 GHz
+derived peak: 1769 GB/s  (= 4096 bit x 1.728 GHz x 2 DDR)
+
+  read   (sum)      1650.5 GB/s best    1644.9 median    93.3% of peak
+  write  (fill)     1436.8 GB/s best    1435.4 median    81.2% of peak
+  copy   (a=b)      1589.2 GB/s best    1587.4 median    89.8% of peak
+  triad  (a=b+sc)   1595.6 GB/s best    1592.6 median    90.2% of peak
+
+headline    : 1650 GB/s (93% of derived peak 1769 GB/s)
+mem clock   : 1728 / 1728 MHz under load
+```
+
+**An unlocked 170HX beats its own published memory-bandwidth figure**, and the
+arithmetic says exactly why:
+
+| | bus | memory clock | bandwidth |
+|---|---|---|---|
+| Published CMP 170HX spec | 4096-bit | 1.458 GHz | 1493 GB/s |
+| What the card reports unlocked | 4096-bit | **1.728 GHz** | 1769 GB/s theoretical |
+| Measured here (STREAM read) | | | **1650 GB/s** |
+
+Same bus width; the unlock lifts the memory clock **+18.5 %**. 1493 GB/s is not
+a hardware limit, it is the restricted state — and `4096 × 1.458 GHz × 2 ÷ 8`
+reproduces the published figure to the GB, which is how you know that reading is
+right rather than convenient.
+
 ## What is in here
 
 | | |
 |---|---|
 | `bin/hx-vram-screen.sh` | The screen. One continuous run: memory test *is* the thermal soak |
 | `bin/hx-thermal-analyze.py` | Turns the telemetry curve into °C/W and a repaste/repad verdict |
+| `bin/hx-bandwidth.py` | HBM2e throughput, STREAM-style, as a measured fraction of derived peak |
 | `bin/hx-dashboard.py` | Web UI on `:8097` — batch index, live run, customer-ready export. Stdlib only, read-only |
 | `bin/hx-tui.py` | Console display for a headless bench, on `tty1` or over `ssh -t` |
 | `bench-setup/` | Driver, unlock, airflow, fan wiring — the one-time bench build |

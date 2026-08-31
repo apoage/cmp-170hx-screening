@@ -19,7 +19,19 @@ jobs:
           shellcheck -S warning bin/hx-vram-screen.sh install.sh bench-setup/hx-install-unlock.sh
 
       - name: python compile
-        run: python3 -m py_compile bin/hx-thermal-analyze.py bin/hx-dashboard.py bin/hx-tui.py
+        run: python3 -m py_compile bin/hx-thermal-analyze.py bin/hx-dashboard.py bin/hx-tui.py bin/hx-bandwidth.py
+
+      - name: bandwidth tool exits cleanly without a GPU
+        # It must fail with a usable message, not a traceback: the most likely
+        # first run is on a bench where torch is in a venv the user has not
+        # named yet.
+        run: |
+          if python3 bin/hx-bandwidth.py > /tmp/bw.txt 2>&1; then
+            echo "expected a non-zero exit with no CUDA available"; cat /tmp/bw.txt; exit 1
+          fi
+          cat /tmp/bw.txt
+          grep -qi "torch" /tmp/bw.txt
+          ! grep -qi "Traceback" /tmp/bw.txt
 
       - name: thermal analyzer against a recorded curve
         # Guards the one piece that can be tested without a GPU: the analyser is

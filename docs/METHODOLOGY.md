@@ -26,8 +26,8 @@ an absolute temperature is a statement about the *bench*, not the card. This is
 why the method is comparative (§5).
 
 **FBPAs floorswept at the factory.** Our reference card reports
-`FBPA_DISABLE=0xc0330c` — three FBPAs disabled — and still reaches full
-bandwidth. So a healthy card of this SKU does *not* have every channel enabled,
+`FBPA_DISABLE=0xc0330c` — three FBPAs disabled — and still measures 1650 GB/s,
+93 % of the peak implied by its own 4096-bit bus (§5b). So a healthy card of this SKU does *not* have every channel enabled,
 and **"all memory channels available" is a claim you must not make**. What we
 claim instead: the full heap is present and addressable, and throughput is in
 the healthy band. Both are measured.
@@ -137,6 +137,81 @@ from a card that has not settled. The analyser **disables the plateau check
 below 5 minutes** rather than emit a verdict it cannot support; the screen warns
 below 8. Use 15 for anything you will send to a buyer.
 
+## 5b. Throughput: measured against a peak the card derives itself
+
+The memory test says the heap is *sound*. It does not say it is *fast*, and the
+GB/sec it prints is not a bandwidth measurement — `memtest_vulkan` generates and
+verifies patterns while it streams, so ALU work and read-back are folded into
+that figure. On our cards it reads ~940 GB/s, which is a **floor**.
+
+`hx-bandwidth.py` runs STREAM-style kernels that do nothing but move bytes —
+read, write, copy, scale, add, triad — each paired with the number of bytes it
+is *required* to move. Getting that accounting wrong is the classic way to
+publish a bandwidth figure that is a clean factor of 2 or 3 out.
+
+### The peak comes off the card, not off a spec sheet
+
+Theoretical peak is derived from two values read from the device itself:
+
+```
+bus width x memory clock x 2 (DDR) / 8
+4096 bit x 1.728 GHz x 2 / 8      = 1769 GB/s
+```
+
+This matters more than it looks, because **the published CMP 170HX figure is
+1493 GB/s** — lower than what the card reports. The same arithmetic explains the
+gap exactly:
+
+| | bus | memory clock | bandwidth |
+|---|---|---|---|
+| Published spec | 4096-bit | 1.458 GHz | **1493 GB/s** |
+| Unlocked, as reported by the device | 4096-bit | **1.728 GHz** | 1769 GB/s |
+
+`4096 × 1.458 GHz × 2 ÷ 8` reproduces the published number **to the GB**. So the
+bus width is stock, and the restriction was on the memory clock: unlocking lifts
+it **+18.5 %**. 1493 GB/s is a state, not a ceiling.
+
+That reproduction is the reason to trust the derived peak at all. A "theoretical
+peak" you cannot check against a known-good reference is just a bigger number to
+divide by.
+
+### Measured, on a card with a tenant resident
+
+| kernel | bytes moved | best | % of derived peak |
+|---|---|---|---|
+| read (sum) | N | **1650 GB/s** | 93 % |
+| write (fill) | N | 1437 GB/s | 81 % |
+| copy | 2N | 1589 GB/s | 90 % |
+| add / triad | 3N | 1596 GB/s | 90 % |
+
+Serial 1322421002084, memory clock 1728/1728 MHz under load, 3 × 1420 MiB
+working set. Note the conditions: this card had an inference server holding
+58.9 GB of its 64 GB at the time, so the figures are if anything pessimistic —
+a bandwidth measurement does not need a free heap, only a working set that
+dwarfs the 34 MB L2, and stating the contention is better than quietly omitting
+it.
+
+Read exceeds copy and triad because a read-only stream has no write traffic to
+interleave; write-only is lowest because it gets no benefit from read-allocate.
+That ordering is the expected shape. A card that inverts it is interesting.
+
+### Interpreting a low figure
+
+80–90 % of derived peak is what a tuned STREAM kernel achieves on GA100-class
+HBM2e. Below ~70 % on an idle GPU, suspect the card rather than the benchmark:
+
+- **`clocks.mem` below `clocks.max.mem` under load** — the memory is
+  downclocked; the tool prints both and flags it.
+- **Another process on the GPU** — reported, not guessed, from
+  `nvidia-smi --query-compute-apps`.
+- **A card not running its unlocked geometry** — a memory clock of ~1458 MHz
+  rather than 1728 means the unlock did not take, or a kernel upgrade reverted
+  it (see [bench-setup](../bench-setup/README.md#3-unlock)).
+
+Throughput is deliberately a **separate tool**, not a stage of the screen: it
+needs PyTorch with CUDA, and the screen must keep running on a bare bench with
+nothing but the driver, `vulkan-tools` and Python's standard library.
+
 ## 6. The batch is the reference
 
 Because the card is passive, absolute temperature depends on your bench airflow.
@@ -203,6 +278,9 @@ seconds in gets sold as tested.
   the card *in our bench's airflow*.
 - Not that every memory channel is enabled — see §1. Full heap present and
   addressable, throughput in band.
+- Not a statement about speed at all. Throughput is a **separate** measurement
+  (§5b) and is deliberately not folded into the verdict: a card can be perfectly
+  sound and still be downclocked, and collapsing the two would hide that.
 
 ## 10. Evidence
 

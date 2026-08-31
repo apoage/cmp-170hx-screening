@@ -8,6 +8,7 @@ parallel screen — so the °C/W figures in them are directly comparable.
 | `report-PASS.md` | A card that passed. This is the document a buyer receives. |
 | `report-FAIL.md` | A card that failed on memory miscompares — note its thermals are *fine*, which is exactly why a thermal-only check is not enough. |
 | `FLEET.csv` | The batch record: one row per run, the input to `--rollup`. |
+| `bandwidth-1322421002084.json` | `hx-bandwidth.py --json` on an unlocked card: 1650 GB/s, 93 % of the 1769 GB/s its own bus width and memory clock imply. Taken with an inference server holding 58.9 GB, so it is a pessimistic reading. |
 
 ## Reading the rollup
 

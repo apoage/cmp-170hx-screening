@@ -1,0 +1,25 @@
+{
+  "card": "NVIDIA CMP 170HX",
+  "sms": 70,
+  "bus_width_bit": 4096,
+  "memory_clock_ghz": 1.728,
+  "derived_peak_gbs": 1769.472,
+  "headline_gbs": 1650.4880545837686,
+  "pct_of_peak": 93.275737315073,
+  "buffer_mib": 1420,
+  "iters": 30,
+  "smi_before": {
+    "memory.used": "58965",
+    "utilization.gpu": "2",
+    "clocks.mem": "1728",
+    "clocks.max.mem": "1728",
+    "power.draw": "42.88",
+    "temperature.gpu": "35"
+  },
+  "smi_after": {
+    "clocks.mem": "1728",
+    "power.draw": "187.50",
+    "temperature.gpu": "38",
+    "temperature.memory": "53"
+  }
+}
