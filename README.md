@@ -1,13 +1,15 @@
-# CMP 170HX screening suite
+# Test your GPU
 
-A reproducible acceptance test for used **NVIDIA CMP 170HX** cards: full-heap
-VRAM integrity, thermal triage, and provenance disclosure, ending in a signed
-per-card report you can hand to a buyer.
+**Bought a used NVIDIA CMP 170HX? Don't take anyone's word for it — including
+ours. Run the test yourself.**
 
-We built it to screen batches of ex-mining 170HXs before resale. We publish it
-so that **anyone who buys a card from us can re-run the exact test we ran and
-get the exact report we got** — and so anyone screening their own pile does not
-have to rediscover the traps we hit.
+This is the acceptance screen we run on every card before we sell it, published
+in full: full-heap VRAM integrity, thermal triage, and provenance disclosure,
+ending in a per-card report with hashed raw evidence behind every number.
+
+One command, about fifteen minutes, and you have the same document we have — for
+your card, on your bench, from your own run. If our report and yours disagree,
+that is something you can now find out.
 
 ```console
 $ bash bin/hx-vram-screen.sh 15
@@ -32,8 +34,8 @@ rollup they came from.
 
 ## What it actually proves
 
-Four claims, each with its own instrument, and none of them taken on trust from
-a single vendor tool:
+Four claims about your card, each with its own instrument, and none of them
+taken on trust from a single vendor tool:
 
 | Claim | How | Why it is not circular |
 |---|---|---|
@@ -44,8 +46,8 @@ a single vendor tool:
 
 And one it discloses rather than proves: **provenance**. Ex-mining cards often
 have a blanked or damaged InfoROM. That is not a performance defect, but it
-means the card cannot vouch for its own identity, so the report says so under a
-`AS-PULLED` heading instead of leaving a buyer to find out.
+means the card cannot vouch for its own identity, so the report says so under an
+`AS-PULLED` heading instead of leaving you to find out later.
 
 The full reasoning, including what a pass does *not* mean, is in
 **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)**.
