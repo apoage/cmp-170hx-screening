@@ -38,7 +38,8 @@ jobs:
           # frozen 90 s in: rc=124 (our limit ended it) but only 60 s recorded
           # of a 15-min window — must be INCONCLUSIVE, never PASS
           [ "$(python3 $V $F/memtest-frozen.txt 61847529062 --rc 124 --mins 15 | head -1)" = "INCONCLUSIVE" ]
-          python3 $V $F/memtest-frozen.txt 61847529062 --rc 124 --mins 15 >/dev/null; rc2=$?; [ "$rc2" -eq 2 ]
+          rc2=0; python3 $V $F/memtest-frozen.txt 61847529062 --rc 124 --mins 15 >/dev/null || rc2=$?
+          [ "$rc2" -eq 2 ]
           # died early, no closing line: INCONCLUSIVE
           [ "$(python3 $V $F/memtest-earlyexit.txt 61847529062 --rc 1 --mins 15 | head -1)" = "INCONCLUSIVE" ]
           [ "$(python3 $V $F/memtest-maskable.txt 61847529062 | head -1)" = "PASS-MASK" ]
