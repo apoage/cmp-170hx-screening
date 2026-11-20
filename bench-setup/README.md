@@ -86,7 +86,24 @@ See the top-level [README](../README.md).
 ## Credit
 
 The unlock is **[cmpunlocker](https://github.com/amoghmunikote/cmpunlocker)**
-(GPL-2.0) — somebody else's work. We did not write it and do not redistribute
+(GPL-2.0) — somebody else's work.
+
+**Pin the commit you validate.** cmpunlocker moves fast and a moving checkout
+can change what lands in your kernel module between two benches. We validated
+upstream commit `88e39ce` (tag `v0.4` line; works against nvidia-open
+610.43.03) — check out that commit before running the installer and re-verify
+after any bump:
+
+```console
+$ git -C cmpunlocker checkout 88e39ce
+```
+
+**Leave the IOMMU on.** Do not boot with `iommu=pt` on the screening bench:
+with passthrough translation off, a stray GPU DMA write lands directly in
+host RAM — we observed host-memory corruption within milliseconds of a bad
+PCIe override write on exactly that configuration. `intel_iommu=on`
+(translated) is the safe default and costs nothing measurable at these
+bandwidths. We did not write it and do not redistribute
 it; this repository contains none of its code, and `hx-install-unlock.sh` only
 *calls* it, in the right order, with guards for the failure modes we hit.
 

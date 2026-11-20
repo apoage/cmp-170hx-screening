@@ -170,7 +170,7 @@ LATEST="$BASE/results/${SN}.md"
 say(){ echo "$*" | tee -a "$OUT/run.log"; }
 
 say "=== CMP 170HX screen — serial ${SN}${TAG:+ (tag: $TAG)} — ${STAMP} — ${MINS} min ==="
-[ "$MINS" -ge 8 ] || say "WARN: under 8 min the thermal plateau check is disabled (run won't have settled)"
+[ "$MINS" -ge 8 ] || say "WARN: the analyser disables the plateau check under 5 min; under 8 min the run has not settled — send 15 min reports only"
 
 # --------------------------------------------------------------- 0. GUARD
 APPS="$(nvidia-smi -i "$GPU" --query-compute-apps=pid,process_name,used_memory --format=csv,noheader 2>/dev/null)"
@@ -357,6 +357,11 @@ MTV_RC=$?          # 124 = our time limit ended it, i.e. it ran the WHOLE window
 sleep 4                                    # let the tail of the curve land
 kill "$SAMPLER" 2>/dev/null; wait "$SAMPLER" 2>/dev/null
 nvidia-smi -i "$GPU" -q > "$OUT/03a-ecc-post.txt" 2>&1 || :  # ECC counters, after
+# what actually ran: version from its own banner, hash of the binary itself —
+# the tool can come from $PATH or any MTV_VERSION, so don't hard-code it
+MTV_VER="$(grep -m1 -oE 'memtest_vulkan [0-9][0-9.]*' "$OUT/03-memtest_vulkan.txt" 2>/dev/null | awk '{print $2}')"
+MTV_VER="${MTV_VER:-unknown}"
+MTV_HASH="$(sha256sum "$MTV" 2>/dev/null | awk '{print $1}')"
 
 # Verdict. Binding the test to a specific device makes the binary run as the
 # WORKER process, and the worker does not print the parent's closing verdict
@@ -405,9 +410,9 @@ say "[4] thermal verdict: ${THERMAL:-unparsed}"
 
 # ------------------------------------------------- 5. OPTIONAL CUDA CHECK
 CUDA="not run"
-if [ "${CROSSCHECK:-0}" = "1" ] && [ -x "$HOME/bench-env/bin/python" ] && [ -f "$HOME/cmp170hx-tools/memtest.py" ]; then
-    say "[5] CUDA cross-check (second API)"
-    "$HOME/bench-env/bin/python" "$HOME/cmp170hx-tools/memtest.py" --passes 1 \
+if [ "${CROSSCHECK:-0}" = "1" ] && [ -n "${CROSSCHECK_PY:-}" ] && [ -x "$CROSSCHECK_PY" ]; then
+    say "[5] CUDA cross-check (second API, via \$CROSSCHECK_PY)"
+    "$CROSSCHECK_PY" --passes 1 \
         --log "$OUT/05-cuda-memtest.log" > "$OUT/05-cuda-memtest.txt" 2>&1
     grep -q "result=PASS" "$OUT/05-cuda-memtest.log" && CUDA=PASS || CUDA=FAIL
     say "    CUDA: $CUDA"
@@ -464,8 +469,14 @@ case "$THERMAL" in
   REPASTE*|REPAD*) [ "$VERDICT" = PASS ] && VERDICT="PASS — SERVICE COOLING" ;;
 esac
 say "OVERALL: $VERDICT"
+# Coverage stated honestly: the test covers the free heap minus the OS/driver
+# reservation, e.g. "61 GiB of 62 GiB free, ~97% of free" — not "the full heap".
+COVERAGE_PCT="$(awk -v t="$TEST_BYTES" -v m="${FREE_MIB:-0}" \
+    'BEGIN{printf "%d GiB of %d GiB free, ~%d%% of free", t/1073741824, m/1024, (m>0 ? t/(m*1048576)*100 : 0)}')"
 
-sha256sum "$OUT"/* 2>/dev/null | grep -v SHA256SUMS > "$OUT/SHA256SUMS"
+# Hash from inside the run folder: relative paths keep the file usable after
+# the folder is moved and do not leak the bench user's home path.
+( cd "$OUT" && sha256sum ./* 2>/dev/null | grep -v SHA256SUMS > SHA256SUMS )
 mkdir -p "$(dirname "$FLEET")"
 # Schema guard: an older FLEET.csv has fewer columns, which would silently
 # misalign every new row (and quietly corrupt the batch medians in --rollup).
@@ -524,7 +535,7 @@ Read through **Khronos Vulkan**, a driver path independent of NVIDIA's own tools
 ## 4. VRAM integrity — **${VRAM}**
 | | |
 |---|---|
-| Instrument | memtest_vulkan v0.5.0 (open source, Khronos Vulkan) |
+| Instrument | memtest_vulkan ${MTV_VER:-unknown} (open source, Khronos Vulkan)${MTV_HASH:+, sha256 ${MTV_HASH:0:16}…} |
 | Duration | ${MINS} min continuous (${COVERED}s of testing recorded) |
 | Coverage | $(( TEST_BYTES / 1073741824 )) GiB tested of ${FREE_MIB} MiB free, on an idle GPU |
 | Card under test | PCI ${BUS_SHORT} (matched to test-tool device ${MTV_IDX} by PCI address) |
@@ -532,16 +543,22 @@ Read through **Khronos Vulkan**, a driver path independent of NVIDIA's own tools
 | Result | **${VRAM}** |
 
 $(sed 's/^/- /' "$OUT/03b-vram-verdict.md" 2>/dev/null)
+$(case "$VRAM" in FAIL|PASS-MASK) grep -iE "error found|total errors|address range" \
+    "$OUT/03-memtest_vulkan.txt" 2>/dev/null | head -6 | sed 's/^/    /; s/^    /- `/; s/$/`/' ;; esac)
 
 The GPU was verified idle before the run. Had any process held memory, the test
 would have covered only the free remainder; the run is blocked in that condition
 precisely so a partial pass cannot be mistaken for a full one.
 
+## 5. Thermal
 $(cat "$OUT/04-thermal.md" | sed '/<!--FLEET/d')
+
+## 5b. Kernel log (this card: ${PCI_FULL})
+$( [ "$XIDS" != "not measured" ] && echo "GPU-relevant lines during the run: **${XIDS}** (pre-existing for this card in log: ${HIST})." || echo "**Not measured** — the kernel log was not readable from this account; run with passwordless \`sudo -n\` available to include it." )
 
 ## 6. Scope and limits
 - $(grep -m1 "^ECC" "$OUT/03b-vram-verdict.md" 2>/dev/null || echo "**No ECC.** This card ships with ECC fused off, so there is no hardware error correction and no error counter to read afterwards. Pattern testing is the only available instrument; it detects errors rather than correcting them.")
-- A pass means no errors were detected across the full heap, at operating
+- A pass means no errors were detected across the tested heap (${COVERAGE_PCT}), at operating
   temperature, over the stated duration. Intermittent faults can evade any
   finite test.
 - The card is passively cooled and has no onboard fan sensor: thermal figures
@@ -552,6 +569,7 @@ $([ "$CUDA" != "not run" ] && echo "- Independent CUDA cross-check: **${CUDA}**"
 ## 7. Evidence
 Raw logs in \`$(basename "$OUT")/\`, hashed in \`SHA256SUMS\`. Telemetry is the
 full per-sample curve in \`03-telemetry.csv\`.
+$(if [ -f "$FLEET" ]; then n=$(grep -c "^${SN}," "$FLEET" 2>/dev/null || echo 0); [ "$n" -gt 1 ] && echo; echo "### Run history for serial ${SN} (every recorded run, from FLEET.csv — a rerun cannot erase an earlier FAIL)"; echo; grep "^${SN}," "$FLEET" | awk -F, '{printf "- %s — %s (%s, VRAM %s)\n", $2, $3, $4, $5}'; fi)
 EOF
 
 # The card dossier is part of the report: latent capacity is exactly what a

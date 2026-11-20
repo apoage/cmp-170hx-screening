@@ -26,11 +26,22 @@ an absolute temperature is a statement about the *bench*, not the card. This is
 why the method is comparative (§5).
 
 **FBPAs floorswept at the factory.** Our reference card reports
-`FBPA_DISABLE=0xc0330c` — three FBPAs disabled — and still measures 1650 GB/s,
-93 % of the peak implied by its own 4096-bit bus (§5b). So a healthy card of this SKU does *not* have every channel enabled,
+`FBPA_DISABLE=0xc0330c` — eight channel disables across the FBPA groups — and
+still measures 1650 GB/s, 93 % of the peak implied by its own 4096-bit bus
+(§5b). So a healthy card of this SKU does *not* have every channel enabled,
 and **"all memory channels available" is a claim you must not make**. What we
-claim instead: the full heap is present and addressable, and throughput is in
-the healthy band. Both are measured.
+claim instead: the heap the driver exposes is present and addressable, and
+throughput is in the healthy band. Both are measured.
+
+The card dossier (§1a) measures capacity at the coarser **FBP partition**
+level — the defect words say how many of the 12 partitions (and therefore how
+many of the 6 HBM stacks, and how many GiB) the die physically has behind its
+policy floor. Latent capacity is *potential silicon*, not a promise of usable
+memory: channel-level (FBPA) floorsweeping inside a live partition is exactly
+why the dossier never claims "all channels", only partition-level capacity.
+The two granularity levels are consistent: partitions say how big the die is;
+FBPA words and measured throughput say how completely each partition is
+wired.
 
 ## 2. Identity before anything else
 

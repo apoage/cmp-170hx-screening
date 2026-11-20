@@ -9,6 +9,11 @@ User=@USER@
 WorkingDirectory=@BASE@
 Environment=HX_BASE=@BASE@
 Environment=HX_PORT=@PORT@
+# The dashboard has no login; the script's own default is loopback-only.
+# A bench box is headless and is watched from the bench LAN, so the service
+# opts INTO binding all interfaces deliberately. Remove this line to lock
+# it back to 127.0.0.1.
+Environment=HX_BIND=0.0.0.0
 ExecStart=/usr/bin/python3 @HERE@/bin/hx-dashboard.py
 # A bench runs for weeks unattended; the dashboard is read-only, so restarting
 # it can never disturb a screen in progress. Verified surviving kill -9.
