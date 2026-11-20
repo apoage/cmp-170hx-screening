@@ -9,7 +9,7 @@ must not depend on pip, a venv, or network access. It only ever READS from
 Routes
   /                                 index: every card screened, newest first
   /run/<dir>                        detail: full report + thermal chart
-  /run/<dir>/customer.html          self-contained page to send the buyer
+  /run/<dir>/customer.html          self-contained shareable report page
   /run/<dir>/report.md              raw markdown
   /run/<dir>/raw/<file>             any raw log
   /api/status                       JSON, for scripting
