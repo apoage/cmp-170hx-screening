@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""VRAM verdict with error granularity — PASS / PASS-ECC / PASS-MASK / FAIL.
+"""VRAM verdict with error granularity — PASS / PASS-ECC / MASK-CANDIDATE / FAIL.
 
 Reads a memtest_vulkan run log (as captured by hx-vram-screen.sh) plus
 optional nvidia-smi -q snapshots from before and after the run, and classifies:
 
-  PASS        no errors detected over proven coverage
-  PASS-ECC    pattern-clean, but ECC corrected errors appeared during the run
-              (weak cells the ECC repairs — fixable, disclosed)
-  PASS-MASK   errors exist but every error address sits at or above a heap
-              boundary that a smaller unlock geometry can exclude — a
-              reducible-geometry card, sellable at the lower capacity after
-              re-unlock + retest
-  FAIL        errors inside the always-sellable region, or scattered (not
-              fixable by any geometry)
-  INCONCLUSIVE  neither a pass nor errors over proven coverage — rerun
+  PASS            no errors detected over proven coverage (>= window - 90 s
+                  of recorded test time; less reads as INCONCLUSIVE, frozen)
+  PASS-ECC        pattern-clean, but ECC corrected events appeared during the
+                  run — disclosed as a finding, never as a sales note
+  MASK-CANDIDATE  errors whose BUFFER addresses sit high enough that a smaller
+                  unlock might exclude them. NOT a pass: buffer position is
+                  not physical position (HBM is interleaved), so the card
+                  FAILS until a retest at the smaller geometry passes
+  FAIL            errors below the smallest geometry, uncorrectable ECC
+                  events, or error markers this tool could not fully parse —
+                  unparsed errors never downgrade to PASS
+  INCONCLUSIVE    neither proven coverage nor errors — rerun
 
 Error addresses come from memtest_vulkan's own reporting:
   "Error found. Mode <m>, total errors 0xN out of 0xN (P%)"
@@ -33,6 +35,8 @@ import sys
 GIB = 1 << 30
 ERROR_LINE = re.compile(r"Error found\. Mode (\S+), total errors 0x([0-9A-Fa-f]+)")
 RANGE_LINE = re.compile(r"Errors address range:\s*0x([0-9A-Fa-f]+)\.\.=0x([0-9A-Fa-f]+)")
+# broad backstop: ANY error wording — an unparsed error must never pass
+ERROR_MARKER = re.compile(r"(?i)(errors? found|total errors|error detected)")
 PASS_LINE = re.compile(r"no any errors, testing PASSed")
 COVERED_LINE = re.compile(r"Passed +([0-9.]+) seconds")
 ECC_CORR = re.compile(r"(Correctable|Corrected)[^:]*:\s*(\d+)", re.I)
@@ -43,35 +47,58 @@ DEFAULT_MIN_USABLE_GIB = 40
 
 
 def ecc_totals(path):
-    """(corrected, uncorrectable) summed over an nvidia-smi -q snapshot."""
+    """(corrected, uncorrectable) VOLATILE counters from an nvidia-smi -q
+    snapshot, or None when the card doesn't expose ECC counters.
+
+    Volatile only: the Aggregate block is lifetime-cumulative and summing
+    both would roughly double the run delta. "N/A" fields mean the counter
+    set is absent on this card — that reads as not-readable, not as zero."""
     try:
         text = open(path, errors="replace").read()
     except OSError:
         return None
-    corr = sum(int(m.group(2)) for m in ECC_CORR.finditer(text))
-    unc = sum(int(m.group(2)) for m in ECC_UNCORR.finditer(text))
+    volatile = re.split(r"(?im)^\s*Aggregate\s*$", text)[0]
+    if not re.search(r"(?i)correct", volatile):     # no ECC section at all
+        return None
+    if re.search(r"(?i)(correctable|une)[^:\n]*:\s*N/A", volatile):
+        return None
+    # (?<!Un): "Correctable" must not match inside "Uncorrectable"
+    corr = sum(int(m.group(2)) for m in
+               re.finditer(r"(?i)(?<!Un)(Correctable|Corrected)[^:]*:\s*(\d+)",
+                           volatile))
+    unc = sum(int(m.group(2)) for m in
+              re.finditer(r"(?i)(Uncorrectable|Une)[^:]*:\s*(\d+)", volatile))
     return corr, unc
 
 
 def classify(log, tested_bytes, rc, pre_q, post_q, min_usable_gib, mins):
-    expected_min = mins * 60 - 45          # window minus one 30 s report
-                                           # interval and slack: memtest_vulkan
-                                           # reports every 30 s, so a run that
-                                           # truly covered the window has at
-                                           # least this much recorded time
+    # window minus 90 s slack: startup plus the unreported tail of the last
+    # 30 s interval cost a real 15-min run ~50 s of recorded time (our own
+    # PASS example recorded 848 s of 900). 45 s of slack broke every real
+    # run; 90 s keeps the freeze protection (a run frozen at 60 s still
+    # reads INCONCLUSIVE).
+    expected_min = mins * 60 - 90
     errors = []          # (mode, count, start, end)
+    error_markers = 0    # ANY error wording — backstop: unparsed ≠ pass
     clean_pass = False
     covered = 0
     pending = None
     for line in log.splitlines():
+        if ERROR_MARKER.search(line):
+            error_markers += 1
         m = ERROR_LINE.search(line)
         if m:
             pending = (m.group(1), int(m.group(2), 16))
             continue
         m = RANGE_LINE.search(line)
         if m and pending:
-            errors.append((pending[0], pending[1],
-                           int(m.group(1), 16), int(m.group(2), 16)))
+            start, end = int(m.group(1), 16), int(m.group(2), 16)
+            if start >= tested_bytes or end >= tested_bytes or end < start:
+                # impossible address: treat like an unparsed error, never
+                # let a malformed range downgrade the verdict
+                errors.append(None)
+            else:
+                errors.append((pending[0], pending[1], start, end))
             pending = None
             continue
         if PASS_LINE.search(line):
@@ -80,22 +107,38 @@ def classify(log, tested_bytes, rc, pre_q, post_q, min_usable_gib, mins):
         if m:
             covered += int(float(m.group(1)))
 
-    # ECC deltas across the run, when the card exposes counters at all
-    ecc_note = None
+    # Backstop: error wording in the log that we could not fully parse
+    # (missing range line, different wording, device-lost banners) must
+    # never read as PASS.
+    unparsed = error_markers - len(errors)
+    if unparsed > 0 or None in errors:
+        return ("FAIL", [
+            "error markers in log: %d, fully parsed: %d — refusing to grade "
+            "unparsed errors as anything but FAIL" %
+            (error_markers, len(errors)),
+            "inspect the raw memtest log; if the card reported errors in a "
+            "format this tool does not parse, that is a failing run"])
+
+    # ECC deltas across the run, when the card exposes counters at all.
+    # The note is ALWAYS set — a None note crashed --md and printed a
+    # literal '- None' line into buyer reports.
     corr_delta = unc_delta = 0
+    ecc_readable = False
     pre, post = ecc_totals(pre_q) if pre_q else None, ecc_totals(post_q) if post_q else None
-    if pre and post:
+    if pre is not None and post is not None:
+        ecc_readable = True
         corr_delta, unc_delta = post[0] - pre[0], post[1] - pre[1]
         if unc_delta > 0:
-            ecc_note = "ECC UNCORRECTABLE errors during run: +%d" % unc_delta
+            ecc_note = "ECC uncorrectable events during run: +%d" % unc_delta
         elif corr_delta > 0:
-            ecc_note = ("ECC corrected (fixable) errors during run: +%d — "
-                        "weak cells the ECC repairs; disclosed, not a defect "
-                        "for inference duty" % corr_delta)
+            ecc_note = ("ECC corrected (single-bit) events during run: +%d — "
+                        "disclosed as a finding; corrected errors on a resale "
+                        "card are a fact to weigh, not a pass note" % corr_delta)
+        else:
+            ecc_note = "ECC counters readable: no corrected or uncorrectable events during run"
     else:
-        ecc_note = ("ECC counters not readable on this card — pattern testing "
-                    "is the only instrument (this SKU ships ECC fused off "
-                    "unless the unlock enables it)")
+        ecc_note = ("ECC counters not readable on this card (absent or N/A) — "
+                    "pattern testing is the only instrument")
 
     if errors:
         lowest = min(e[2] for e in errors)
@@ -108,13 +151,21 @@ def classify(log, tested_bytes, rc, pre_q, post_q, min_usable_gib, mins):
                 (total, len(errors), lowest // GIB, heap_gib), ecc_note,
                 "FAIL — uncorrectable ECC events during the run (not fixable)"])
         if usable_gib >= min_usable_gib:
-            return ("PASS-MASK", [
-                "errors: %d in %d range(s), all at or above %d GiB of the %d GiB tested"
-                % (total, len(errors), usable_gib, heap_gib), ecc_note,
-                "PASS (mask region): the lowest %d GiB is clean — re-unlock "
-                "with a smaller geometry (profile leaving <= %d GiB), retest, "
-                "and sell as a %d GiB card" %
-                (usable_gib, usable_gib, usable_gib)])
+            # NB: the address is an offset in memtest_vulkan's BUFFER, not a
+            # physical address. GPU memory is interleaved across HBM channels
+            # and a smaller unlock changes which physical partitions are
+            # used — it does NOT simply crop the top of the buffer. So this
+            # is a CANDIDATE for rescue-by-retest, not a pass: the card
+            # fails until a retest at the smaller geometry actually passes.
+            return ("MASK-CANDIDATE", [
+                "errors: %d in %d range(s), lowest at %d of %d GiB in the "
+                "tested buffer" % (total, len(errors), usable_gib, heap_gib),
+                ecc_note,
+                "FAIL — mask candidate (unverified): buffer addresses suggest "
+                "the errors sit high, but buffer position is not physical "
+                "position; re-unlock at <= %d GiB and RETEST. Only a passing "
+                "retest at the smaller geometry changes this verdict" %
+                usable_gib])
         return ("FAIL", [
             "errors: %d in %d range(s), lowest at %d/%d GiB" %
             (total, len(errors), lowest // GIB, heap_gib), ecc_note,
@@ -128,10 +179,9 @@ def classify(log, tested_bytes, rc, pre_q, post_q, min_usable_gib, mins):
                              "events occurred during the run (not fixable)"])
         if corr_delta > 0:
             return ("PASS-ECC", [ecc_note,
-                                  "PASS — with disclosed ECC-corrected "
-                                  "(fixable) errors during the run"])
-        return ("PASS", [ecc_note if pre and post else
-                         "ECC counters not readable — pattern testing only"])
+                                  "PASS — ECC-corrected events during the run "
+                                  "are disclosed above as a finding"])
+        return ("PASS", [ecc_note])
     if rc == 124 and 0 < covered < expected_min:
         return ("INCONCLUSIVE", [
             "coverage %ds of an expected >=%ds window (rc=124): the test "
@@ -169,7 +219,7 @@ def main():
         print(verdict)
         for d in detail:
             print(d)
-    sys.exit({"FAIL": 1, "INCONCLUSIVE": 2}.get(verdict, 0))
+    sys.exit({"FAIL": 1, "MASK-CANDIDATE": 1, "INCONCLUSIVE": 2}.get(verdict, 0))
 
 
 if __name__ == "__main__":

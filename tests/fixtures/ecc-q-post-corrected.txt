@@ -1,13 +1,16 @@
-
-    Ecc Mode
-        Current : Enabled
-        Pending : Enabled
-    Ecc Errors
+    ECC Mode
+        Current                                       : Enabled
+        Pending                                       : Enabled
+    ECC Errors
         Volatile
-            Sram Correctable : 37
-            Dram Correctable : 12
+            SRAM Correctable                           : 37
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 12
+            DRAM Uncorrectable                         : 0
         Aggregate
-            Volatile Sram Une : 0
-            Volatile Dram Une : 0
-            Aggregate Sram Une : 0
-            Aggregate Dram Une : 0
+            SRAM Correctable                           : 61
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                  : 0
+            DRAM Correctable                           : 12
+            DRAM Uncorrectable                         : 0

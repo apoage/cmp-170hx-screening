@@ -1,0 +1,3 @@
+[12345.678901] NVRM: Xid (PCI:0000:05:00): 79, pid=1234, process=memtest_vulkan, GPU-00000000-0000-0000-0000-000000000000, info=MMU page fault: GR OM PAIR
+[12400.123456] NVRM: Xid (PCI:0000:03:00): 13, pid=99, process=other_card_proc, info=graphics engine exception
+[12500.1] pcieport 0000:00:1b.4: pcie bus error: severity=corrected, type=physical layer

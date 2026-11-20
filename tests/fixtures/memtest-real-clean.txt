@@ -1,0 +1,7 @@
+Standard 5-minute test of 1: Bus=0x03:00 DevId=0x20C2   64GB NVIDIA CMP 170HX
+      1 iteration. Passed  0.0047 seconds  written:    0.5GB 321.2GB/sec        checked:    1.0GB 316.5GB/sec
+    302 iteration. Passed  1.0017 seconds  written:  150.5GB 501.6GB/sec        checked:  301.0GB 429.0GB/sec
+   1878 iteration. Passed  5.0021 seconds  written:  788.0GB 528.1GB/sec        checked: 1576.0GB 449.0GB/sec
+  11362 iteration. Passed 30.0012 seconds  written: 4742.0GB 530.3GB/sec        checked: 9484.0GB 450.4GB/sec
+  20841 iteration. Passed 30.0009 seconds  written: 4739.5GB 530.0GB/sec        checked: 9479.0GB 450.1GB/sec
+  30306 iteration. Passed 30.0026 seconds  written: 4732.5GB 528.9GB/sec        checked: 9465.0GB 449.5GB/sec

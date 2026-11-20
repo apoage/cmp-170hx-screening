@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.5.0 — 2026-11-20
+
+Second review round: the grader itself was over-confident.
+
+**Fixed — regressions in the verdict path:**
+- Real 15-minute runs recorded ~848 s of 900 and read INCONCLUSIVE under the
+  45 s slack. The coverage floor is now window − 90 s (our own PASS example
+  passes; a run frozen at 60 s still reads INCONCLUSIVE).
+- Unparsed error markers (different wording, device-lost banners, missing
+  range lines, impossible addresses) can no longer read as PASS: any error
+  wording that is not fully parsed grades FAIL.
+- ECC note was None on the most common path (counters readable, delta
+  zero) — crashed `--md`, printed `- None` into buyer reports. The note is
+  always set; N/A counters count as not-readable, not as zero.
+- Xid matching rewrote to the real line format `NVRM: Xid (PCI:0000:05:00):
+  79` — bus:device with no `.function`: fixed-string PCI tag (dots are not
+  regex), fatal code read after the closing paren (was reading `0000` out
+  of the address). The fatal-Xid FAIL can actually trigger now — which
+  matters with ECC on, since 48/63/64/94/95 are the ECC events. Same fix in
+  cardreport's per-card Xid count. CI carries a real-format Xid fixture.
+**Design change — MASK-CANDIDATE is a FAIL, not a pass:** buffer addresses
+  are not physical addresses (HBM is interleaved; a smaller unlock changes
+  which partitions are used, it does not crop the buffer). A card whose
+  errors sit high now FAILS with rescue instructions (re-unlock smaller,
+  retest) until that retest passes.
+**Also:** Volatile-only ECC parsing (Aggregate double-count fixed),
+  `(?<!Un)Correctable` no longer matches inside Uncorrectable, PASS-ECC
+  wording drops the sales claim and just discloses the count, bench-setup
+  IOMMU wording unmuddled + AMD note + driver-pairing + fusegate caveat,
+  README documents the dashboard's deliberate LAN bind under --service.
+
 ## 1.4.0 — 2026-11-20
 
 `--identify` / `hx --identify`: the report of what a card **is**, without any

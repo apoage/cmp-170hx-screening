@@ -179,7 +179,10 @@ right rather than convenient.
 
 The dashboard is deliberately **stdlib-only and read-only**: it runs unattended
 from boot on a bench box with no pip and no network, and it cannot disturb a
-screen in progress.
+screen in progress. It has **no login** and serves `nvidia-smi -q` and kernel-log
+excerpts, so the binary itself defaults to `127.0.0.1`; `install.sh --service`
+deliberately opts into the bench LAN with `HX_BIND=0.0.0.0` (drop that line in
+`bench-setup/hx-dashboard.service.in` to keep it loopback).
 
 ## Verdicts
 
@@ -187,16 +190,16 @@ Memory errors are graded, not just counted:
 
 | VRAM result | Meaning |
 |---|---|
-| `PASS` | No errors detected over proven full-heap coverage |
+| `PASS` | No errors detected over proven coverage of the tested window (~97 % of the free heap) |
 | `PASS-ECC` | Pattern-clean, but the ECC counters advanced with **corrected** (single-bit, fixable) errors during the run — disclosed, sound for duty; disclosed, not hidden |
-| `PASS-MASK` | Errors exist, but every error address sits above a heap boundary a smaller unlock geometry can exclude — a **reducible-geometry** card: re-unlock smaller, retest, sell at the lower capacity. The report states the usable GiB |
+| `MASK-CANDIDATE` | Errors exist whose buffer addresses sit high enough that a smaller unlock *might* exclude them. **Not a pass** — buffer position is not physical position (HBM is interleaved). The card fails until a retest at the smaller geometry actually passes |
 | `FAIL` | Errors reach below the smallest standard geometry (40 GiB), or ECC logged **uncorrectable** events — not fixable by masking. Do not ship |
 
 | Overall verdict | Meaning |
 |---|---|
 | `PASS` | No memory errors, no kernel errors during the run, thermals in band |
 | `PASS — ECC-corrected errors disclosed` | `PASS-ECC` above |
-| `PASS — reducible geometry` | `PASS-MASK` above — sell at the stated lower capacity after re-unlock + retest |
+| `FAIL — MASK CANDIDATE (unverified)` | `MASK-CANDIDATE` above — the stated smaller-geometry retest is the only path to a pass |
 | `PASS — SERVICE COOLING` | Memory is sound; the card is a repaste/repad candidate |
 | `PASS — kernel errors during run` | Memory test clean but the kernel logged Xid/NVRM. Investigate before shipping |
 | `FAIL — VRAM ERRORS` | Not fixable. Do not ship |

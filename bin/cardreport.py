@@ -568,9 +568,11 @@ def main():
         if dmesg_r is None:
             xid_count = "not measured (dmesg unreadable)"
         else:
-            # only this card's lines: Xid lines carry the PCI address
+            # only this card's lines: real Xid lines carry the PCI address
+            # as 0000:05:00 (bus:device, no .function)
+            tag = bdf.rsplit(".", 1)[0]
             xid_count = len([ln for ln in dmesg_r.lower().splitlines()
-                             if "xid" in ln and (bdf in ln or uuid in ln)])
+                             if "xid" in ln and (tag in ln or uuid in ln)])
         card = {"bdf": bdf, "identity": ident,
                 "uptime": runtime.get(uuid, {}),
                 "health": {"temp_c": ident.get("temp_c"),

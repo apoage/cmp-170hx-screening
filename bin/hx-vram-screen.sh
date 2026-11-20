@@ -436,7 +436,7 @@ MTV_HASH="$(sha256sum "$MTV" 2>/dev/null | awk '{print $1}')"
 COVERED="$(grep -oE 'Passed +[0-9.]+ seconds' "$OUT/03-memtest_vulkan.txt" 2>/dev/null \
            | awk '{s+=$2} END{printf "%d", s+0}')"
 if [ -f "$HXVV" ]; then
-    # Granular verdict: PASS / PASS-ECC (fixable) / PASS-MASK (reducible
+    # Granular verdict: PASS / PASS-ECC (fixable) / MASK-CANDIDATE (fails
     # geometry) / FAIL (not fixable), from the error addresses memtest_vulkan
     # itself reports plus the ECC counter delta across the run.
     VRAM_RESULT="$(python3 "$HXVV" "$OUT/03-memtest_vulkan.txt" "$TEST_BYTES" \
@@ -460,7 +460,7 @@ else
 fi
 BW="$(grep -oE '[0-9]+\.?[0-9]*GB/sec' "$OUT/03-memtest_vulkan.txt" | sort -t G -k1 -g | tail -1)"
 say "    VRAM: $VRAM   covered: ${COVERED}s   peak throughput: ${BW:-n/a}   samples: $(wc -l < "$CSV")"
-case "$VRAM" in FAIL|PASS-MASK)
+case "$VRAM" in FAIL|MASK-CANDIDATE)
     grep -iE "error found|total errors|address range" "$OUT/03-memtest_vulkan.txt" \
         | head -6 | tee -a "$OUT/run.log" ;; esac
 
@@ -485,18 +485,20 @@ fi
 # reported this reference card as "see kernel log" on the strength of Xids from
 # a PCIe experiment weeks earlier -- a false alarm on every used card.
 # Attribute kernel lines to THIS card: on a parallel bench every card would
-# otherwise inherit the others' errors. Xid lines carry the PCI address;
-# NVRM lines may carry the GPU UUID instead — match either.
-PCI_FULL="$(echo "$BUSID" | sed 's/^00000000:/0000:/')"
+# otherwise inherit the others' errors. Real Xid lines read
+#   NVRM: Xid (PCI:0000:05:00): 79, ...
+# — bus:device.function WITHOUT the ".function" and no UUID, so match the
+# function-stripped tag as a fixed string (dots must not be regex).
+PCI_TAG="$(echo "$BUSID" | sed 's/^00000000:/0000:/' | cut -d. -f1)"   # 0000:05:00
 if [ "$DMESG_OK" -eq 1 ]; then
     "${DMESG_CMD[@]}" 2>/dev/null | tail -n +$((DMESG_PRE + 1)) > "$OUT/06-dmesg-thisrun.txt"
     grep -iE "xid|nvrm|pcie bus error" "$OUT/06-dmesg-thisrun.txt" \
-        | grep -iE "${PCI_FULL}|${UUID_FULL:-__none__}" > "$OUT/06-errors-thisrun.txt"
+        | grep -F -e "${PCI_TAG}" -e "${UUID_FULL:-__none__}" > "$OUT/06-errors-thisrun.txt"
     XIDS="$(wc -l < "$OUT/06-errors-thisrun.txt")"
     "${DMESG_CMD[@]}" -T 2>/dev/null | grep -iE "xid|nvrm|pcie bus error" \
-        | grep -iE "${PCI_FULL}|${UUID_FULL:-__none__}" | tail -40 > "$OUT/06-dmesg-history.txt"
+        | grep -F -e "${PCI_TAG}" -e "${UUID_FULL:-__none__}" | tail -40 > "$OUT/06-dmesg-history.txt"
     HIST="$(wc -l < "$OUT/06-dmesg-history.txt")"
-    say "[6] kernel errors for ${PCI_FULL} during this run: ${XIDS}  (pre-existing in log: ${HIST})"
+    say "[6] kernel errors for ${PCI_TAG} during this run: ${XIDS}  (pre-existing in log: ${HIST})"
 else
     XIDS="not measured"; HIST="not measured"
     say "[6] kernel log not readable (no dmesg permission; run the screen with"
@@ -508,8 +510,8 @@ fi
 VERDICT=PASS
 case "$VRAM" in
     PASS) : ;;
-    PASS-ECC)  VERDICT="PASS — ECC-corrected errors disclosed" ;;
-    PASS-MASK) VERDICT="PASS — reducible geometry (see VRAM section)" ;;
+    PASS-ECC)  VERDICT="PASS — ECC-corrected events disclosed" ;;
+    MASK-CANDIDATE) VERDICT="FAIL — MASK CANDIDATE (unverified; see VRAM section)" ;;
     FAIL) VERDICT="FAIL — VRAM ERRORS" ;;
     *) VERDICT="INCONCLUSIVE — rerun" ;;
 esac
@@ -517,9 +519,11 @@ esac
 if [ "$XIDS" != "not measured" ] && [ "$XIDS" -gt 0 ]; then
     # Fatal Xid classes (fallen-off-bus, MMU, GSP/RM internal, ECC-related):
     # a run that hit one must never carry a PASS-prefixed verdict.
-    FATAL="$(grep -oiE 'Xid[^0-9]*([0-9]+)' "$OUT/06-errors-thisrun.txt" \
+    # Xid (PCI:0000:05:00): 79 — the CODE is after the closing paren; the
+    # code must not be read out of the PCI address digits
+    FATAL="$(grep -oE 'Xid \(PCI:[^)]*\): [0-9]+' "$OUT/06-errors-thisrun.txt" \
         | grep -oE '[0-9]+$' | sort -u \
-        | grep -xE '8|13|31|43|44|45|48|58|62|63|64|65|74|79|87|92|94' | tr '\n' ' ')"
+        | grep -xE '8|13|31|43|44|45|48|58|62|63|64|65|74|79|87|92|94|95' | tr '\n' ' ')"
     if [ -n "$FATAL" ]; then
         case "$VERDICT" in FAIL*) : ;; *)
             VERDICT="FAIL — FATAL GPU ERROR DURING RUN (Xid ${FATAL})" ;; esac
@@ -605,7 +609,7 @@ Read through **Khronos Vulkan**, a driver path independent of NVIDIA's own tools
 | Result | **${VRAM}** |
 
 $(sed 's/^/- /' "$OUT/03b-vram-verdict.md" 2>/dev/null)
-$(case "$VRAM" in FAIL|PASS-MASK) grep -iE "error found|total errors|address range" \
+$(case "$VRAM" in FAIL|MASK-CANDIDATE) grep -iE "error found|total errors|address range" \
     "$OUT/03-memtest_vulkan.txt" 2>/dev/null | head -6 | sed 's/^/    /; s/^    /- `/; s/$/`/' ;; esac)
 
 The GPU was verified idle before the run. Had any process held memory, the test

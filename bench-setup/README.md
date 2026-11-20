@@ -91,20 +91,30 @@ The unlock is **[cmpunlocker](https://github.com/amoghmunikote/cmpunlocker)**
 **Get it working first.** Use the current upstream cmpunlocker — recent
 releases (v0.5 and newer) also **enable DRAM+SRAM ECC**, which the screen
 then reads across every soak. Don't pre-emptively pin: you want the fixes,
-not our bench's past. If a newer checkout ever misbehaves on your bench,
-fall back to the last commit you validated (for the record, ours was
-`88e39ce` on the v0.4 line against nvidia-open 610.43.03) and report it:
+not our bench's past. Two caveats:
+
+- **Driver pairing.** This script installs nvidia-open 610.43.03 — the line
+  our v0.4-era bench validated. If your cmpunlocker checkout declares a
+  different required driver, follow ITS requirement, not this script's
+  version, and check the screen still runs.
+- **The fusegate probe.** A historical cmpunlocker patch (`0010
+  sec2-hs-fusegate-probe`) could corrupt host RAM. The screen hard-refuses
+  to run against a kernel module carrying it, and the installer checks its
+  exit code — but read what your checkout actually applies. If a newer
+  upstream misbehaves, fall back to the last commit you validated (for the
+  record, ours was `88e39ce` on the v0.4 line) and report it:
 
 ```console
 $ git -C cmpunlocker checkout <last-known-good>
 ```
 
-**Leave the IOMMU on.** Do not boot with `iommu=pt` on the screening bench:
-with passthrough translation off, a stray GPU DMA write lands directly in
-host RAM — we observed host-memory corruption within milliseconds of a bad
-PCIe override write on exactly that configuration. `intel_iommu=on`
-(translated) is the safe default and costs nothing measurable at these
-bandwidths. We did not write it and do not redistribute
+**Leave IOMMU translation ON.** Never boot the bench with `iommu=pt`
+(passthrough). With translation active (`intel_iommu=on` on Intel boards,
+the IOMMU enabled in BIOS on AMD boards), a stray GPU DMA write faults
+harmlessly; with passthrough it lands directly in host RAM. We observed
+host-memory corruption within milliseconds of a bad PCIe override write on
+a passthrough bench — that class of bug then masquerades as random host
+crashes. Translation costs nothing measurable at these bandwidths. We did not write it and do not redistribute
 it; this repository contains none of its code, and `hx-install-unlock.sh` only
 *calls* it, in the right order, with guards for the failure modes we hit.
 
