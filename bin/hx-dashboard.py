@@ -404,7 +404,9 @@ def inline(s):
     s = html.escape(s)
     s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
     s = re.sub(r"`(.+?)`", r"<code>\1</code>", s)
-    s = re.sub(r"_(.+?)_", r"<em>\1</em>", s)
+    # whole-word underscores only: a bare _(.+?)_ rule turns fuse-word names
+    # like fbp_defective 0x840 fbp_disable into italic garbage
+    s = re.sub(r"(?<![\w])_([^_\n]+?)_(?![\w])", r"<em>\1</em>", s)
     return s
 
 
@@ -822,5 +824,9 @@ class Server(socketserver.ThreadingTCPServer):
 
 if __name__ == "__main__":
     RESULTS.mkdir(parents=True, exist_ok=True)
-    print(f"hx-dashboard on :{PORT}  serving {RESULTS}", flush=True)
-    Server(("0.0.0.0", PORT), H).serve_forever()
+    # Default loopback: this page has no login and serves full nvidia-smi -q
+    # and dmesg excerpts. Expose it deliberately via HX_BIND=0.0.0.0 (bench
+    # LAN) only if that trade-off is wanted.
+    BIND = os.environ.get("HX_BIND", "127.0.0.1")
+    print(f"hx-dashboard on {BIND}:{PORT}  serving {RESULTS}", flush=True)
+    Server((BIND, PORT), H).serve_forever()

@@ -1,0 +1,3 @@
+memtest_vulkan 0.5.0
+Test buffer size: 61847529062 bytes, device local type
+Passed 30.00 seconds. Errors: 0. Read 1215.2GB Write 592.4GB

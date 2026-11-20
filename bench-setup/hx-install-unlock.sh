@@ -52,8 +52,17 @@ say "[2/6] preconditions"
 [ -d "$CMP" ] || die "cmpunlocker checkout missing: $CMP"
 [ -d "/lib/modules/$(uname -r)/build" ] || die "kernel headers missing for $(uname -r)"
 SB="$(mokutil --sb-state 2>/dev/null | head -1)"
-case "$SB" in *disabled*) say "    secure boot: disabled ok" ;;
-                       *) die "Secure Boot must be disabled (reads: ${SB:-unknown})" ;; esac
+if [ -z "$SB" ] && ! command -v mokutil >/dev/null 2>&1; then
+    # BIOS-only machines have no mokutil story; the .run installer will still
+    # refuse to build unsigned modules under secure boot, so warn, don't die.
+    say "    mokutil not present — verify Secure Boot is DISABLED in the BIOS"
+    say "    (the unlocked kernel module is unsigned and will not load otherwise)"
+elif [ -z "$SB" ]; then
+    say "    secure boot state unreadable — verify it is DISABLED in the BIOS"
+else
+    case "$SB" in *disabled*) say "    secure boot: disabled ok" ;;
+                           *) die "Secure Boot must be disabled (reads: ${SB})" ;; esac
+fi
 pgrep -x Xorg >/dev/null && die "Xorg is running — this box should be headless"
 say "    kernel $(uname -r), headers present, no X"
 
@@ -67,8 +76,14 @@ fi
 # ---- 3. remove the distro driver ---------------------------------------
 say "[3/6] removing distro nvidia packages (the .run will not coexist)"
 systemctl stop hx-dashboard 2>/dev/null
+# NB: this pattern also removes nvidia-container-toolkit — re-install it
+# afterwards if this bench runs GPU containers.
 DEBIAN_FRONTEND=noninteractive apt-get -y purge '^nvidia-.*' '^libnvidia-.*' \
     >/tmp/unlock-purge.log 2>&1
+if grep -q "nvidia-container-toolkit" /tmp/unlock-purge.log; then
+    say "    NOTE: nvidia-container-toolkit was purged too — re-install it if"
+    say "    this bench runs GPU containers (apt-get install nvidia-container-toolkit)"
+fi
 say "    purged $(grep -cE '^(Removing|Purging)' /tmp/unlock-purge.log) packages"
 
 # ---- 4. nvidia-open 610.43.03 ------------------------------------------
@@ -82,7 +97,14 @@ say "    installed: $(modinfo -F version nvidia 2>/dev/null || echo '?')  licens
 say "[5/6] applying cmpunlocker patches"
 cd "$CMP" || die "cannot cd $CMP"
 ./install.sh 2>&1 | tee /tmp/unlock-cmp.log | tail -25
-grep -qiE "error|failed|die" /tmp/unlock-cmp.log && say "    NOTE: check /tmp/unlock-cmp.log"
+CMP_RC=${PIPESTATUS[0]}
+if [ "${CMP_RC:-1}" -ne 0 ]; then
+    tail -30 /tmp/unlock-cmp.log
+    die "cmpunlocker install.sh exited rc=${CMP_RC} — NOT done, see /tmp/unlock-cmp.log"
+fi
+# target only real failure banners, not the word "die" in prose/paths
+grep -qE "(^|[^a-z])(ABORT|FATAL|ERROR:|Traceback)" /tmp/unlock-cmp.log \
+    && say "    NOTE: failure markers in /tmp/unlock-cmp.log — read it before booting"
 
 # ---- 6. done ------------------------------------------------------------
 say "[6/6] done"
@@ -94,5 +116,5 @@ say ""
 say "  After the cold boot, verify:"
 say "    nvidia-smi --query-gpu=name,memory.total --format=csv   # expect 65536 MiB"
 say "    vulkaninfo | grep -A1 'memoryHeaps\\[0\\]'                # expect 64.00 GiB"
-say "    systemctl is-enabled gen2.service"
+say "    (if this bench set up the optional PCIe Gen2 link service: systemctl is-enabled gen2.service)"
 say "  Then screen the card:  hx 15"

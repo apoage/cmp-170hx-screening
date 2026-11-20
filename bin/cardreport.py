@@ -39,6 +39,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 TOTAL_FBP, TOTAL_GPC, TPC_PER_GPC, SM_PER_TPC = 12, 8, 8, 2
 BYTES_PER_FBP = {"8gb": 8, "10gb": 4}          # GiB per live FBP, by SKU
@@ -191,8 +192,14 @@ def fuse_macro_rows(bar):
 
 # --- NVML uptime telemetry --------------------------------------------------
 def nvml_runtime():
-    """{uuid: {lifetime_h, session_h}} — BBX cumulative driver-active time
-    + current session. Stdlib ctypes only."""
+    """{uuid: {lifetime_h, session_h}} — driver-recorded active hours.
+
+    Uses nvmlDeviceGetBBXTimeData_v1 / nvmlDeviceGetGpuUptime_v1. These v1
+    calls are NOT in the published NVML docs; the single-uint32 struct shape
+    (timeRun / uptime) comes from the public NVML header ABI plus community
+    confirmation on GA100 (honzapatCZ/cmp170hx-test telemetry). The BBX
+    counter is stored in the InfoROM: a wiped InfoROM restarts it, so hours
+    are "since the InfoROM was last initialised", not proven lifetime."""
     try:
         lib = ctypes.CDLL("libnvidia-ml.so.1")
     except OSError:
@@ -364,8 +371,11 @@ def render(card):
           "- vram visible to driver: %s MiB" % ident.get("vram_mib"), ""]
     up = card.get("uptime") or {}
     L += ["## uptime telemetry",
-          "- lifetime (BBX driver-active): %s h" % up.get("lifetime_h", "unavailable"),
-          "- current session: %s h" % up.get("session_h", "unavailable"), ""]
+          "- driver-recorded active hours: %s h" % up.get("lifetime_h", "unavailable"),
+          "- current session: %s h" % up.get("session_h", "unavailable"),
+          "- NB: the lifetime counter lives in the InfoROM — a wiped InfoROM",
+          "  (common on ex-mining cards) restarts it, so LOW HOURS ON A CARD",
+          "  WITH WIPED/BLANKED INFOROM MEAN UNKNOWN, NOT NEW", ""]
     h = card.get("health") or {}
     if h:
         L += ["## health",
@@ -404,6 +414,11 @@ def render(card):
         for g in c["per_gpc"]:
             if g["dead_gpc"]:
                 L.append("- GPC %d: dead" % g["gpc"])
+            elif g["enabled_sms"] > g["latent_sms"]:
+                L.append("- GPC %d: %s enabled vs %s latent — INCONSISTENT "
+                         "READOUT, collect again" % (g["gpc"],
+                                                     g["enabled_sms"],
+                                                     g["latent_sms"]))
             elif g["latent_sms"] != g["enabled_sms"]:
                 L.append("- GPC %d: %s latent / %s enabled (policy hides %s SMs)"
                          % (g["gpc"], g["latent_sms"], g["enabled_sms"],
@@ -483,7 +498,7 @@ def selftest():
 
 
 # --- main ----------------------------------------------------------------------
-GA100_DEVICES = {"0x20c2", "0x20c3"}   # CMP 170HX 8GB / 10GB
+GA100_DEVICES = {"0x20c2", "0x20c3", "0x2082"}   # CMP 170HX 8GB / 10GB / variant
 
 
 def norm_bdf(s):
@@ -535,17 +550,32 @@ def main():
         return selftest()
 
     runtime = nvml_runtime()
-    dmesg = sh("dmesg").stdout.lower()
     cards = []
+    dmesg_r = None
+    if sh("dmesg").returncode == 0:
+        dmesg_r = sh("dmesg").stdout
+    elif sh(["sudo", "-n", "dmesg"]).returncode == 0:
+        dmesg_r = sh(["sudo", "-n", "dmesg"]).stdout
+
+    def word_ok(v):
+        # 0 is a VALID fuse word (no defects / nothing disabled); only
+        # all-ones and BADF poison mean the register did not answer.
+        return v is not None and v != 0xFFFFFFFF and (v & 0xFFFF0000) != 0xBADF0000
 
     for bdf, uuid, ident, is_ga100 in nvidia_cards():
         if a.pci_addr and bdf != a.pci_addr:
             continue
+        if dmesg_r is None:
+            xid_count = "not measured (dmesg unreadable)"
+        else:
+            # only this card's lines: Xid lines carry the PCI address
+            xid_count = len([ln for ln in dmesg_r.lower().splitlines()
+                             if "xid" in ln and (bdf in ln or uuid in ln)])
         card = {"bdf": bdf, "identity": ident,
                 "uptime": runtime.get(uuid, {}),
                 "health": {"temp_c": ident.get("temp_c"),
                            "power_w": ident.get("power_w"),
-                           "ecc_mode": "?", "xid_count": dmesg.count("xid")}}
+                           "ecc_mode": "?", "xid_count": xid_count}}
         try:
             if not is_ga100:
                 raise RuntimeError("device 10de:%s (%s) — GA100 fuse map not "
@@ -563,7 +593,9 @@ def main():
                 words = {}
                 for name, (fused, status) in FIELDS.items():
                     fv, sv = bar.rd32(fused), (bar.rd32(status) if status else None)
-                    words[name] = sv if sane(sv) else fv
+                    # status 0 ("nothing disabled", incl. by FF overrides) is a
+                    # valid reading — only unreadable status falls back to fused
+                    words[name] = sv if word_ok(sv) else fv
                     words[name + "__fused"] = fv
                 for name, off in DEFECTIVE.items():
                     words[name] = bar.rd32(off)
@@ -573,7 +605,7 @@ def main():
                 card["physical"] = analytics(words, a.sku)
                 card["info"] = info
                 card["words_raw"] = {"%s" % k: "0x%x" % v
-                                     for k, v in words.items() if sane(v)}
+                                     for k, v in words.items() if word_ok(v)}
                 if a.ffrows:
                     if sh(["nvidia-smi", "--query-compute-apps=pid",
                            "--format=csv,noheader"]).stdout.strip():

@@ -35,3 +35,9 @@ working rather than the method misbehaving:
 The 2026-08-26 rows also show the parallel-vs-solo effect in
 [§6](../docs/METHODOLOGY.md#6-the-batch-is-the-reference) — the `151327` pair ran
 simultaneously and both sit hotter than the same cards run alone.
+
+> **Note on vintage (2026-11-20):** these reports are real, unedited runs from
+> suite v1.0 (2026-08-31) — before the card dossier existed, so they carry no
+> `[1a]` section and their scope section still says "no ECC" unconditionally.
+> Current runs add the dossier and graded VRAM verdicts. Serials are shown
+> deliberately: this is the full-disclosure model the suite sells with.

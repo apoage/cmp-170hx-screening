@@ -53,7 +53,12 @@ def ecc_totals(path):
     return corr, unc
 
 
-def classify(log, tested_bytes, rc, pre_q, post_q, min_usable_gib):
+def classify(log, tested_bytes, rc, pre_q, post_q, min_usable_gib, mins):
+    expected_min = mins * 60 - 45          # window minus one 30 s report
+                                           # interval and slack: memtest_vulkan
+                                           # reports every 30 s, so a run that
+                                           # truly covered the window has at
+                                           # least this much recorded time
     errors = []          # (mode, count, start, end)
     clean_pass = False
     covered = 0
@@ -116,7 +121,7 @@ def classify(log, tested_bytes, rc, pre_q, post_q, min_usable_gib):
             "FAIL — errors reach into the always-sellable region (below the "
             "%d GiB minimum geometry); not fixable by masking" % min_usable_gib])
 
-    if clean_pass or (rc == 124 and covered > 0):
+    if (clean_pass or rc == 124) and covered >= expected_min:
         if unc_delta > 0:
             return ("FAIL", [ecc_note,
                              "FAIL — pattern-clean but uncorrectable ECC "
@@ -127,8 +132,13 @@ def classify(log, tested_bytes, rc, pre_q, post_q, min_usable_gib):
                                   "(fixable) errors during the run"])
         return ("PASS", [ecc_note if pre and post else
                          "ECC counters not readable — pattern testing only"])
+    if rc == 124 and 0 < covered < expected_min:
+        return ("INCONCLUSIVE", [
+            "coverage %ds of an expected >=%ds window (rc=124): the test "
+            "stopped reporting early — possibly frozen or the card dropped "
+            "off the bus. Never read as a pass; rerun" % (covered, expected_min)])
     return ("INCONCLUSIVE", [
-        "no proven coverage (rc=%s, %ds reported) and no errors — rerun" %
+        "no proven coverage (rc=%s, %ds reported) — rerun" %
         (rc, covered)])
 
 
@@ -138,6 +148,9 @@ def main():
     ap.add_argument("tested_bytes", type=lambda x: int(x, 0))
     ap.add_argument("--rc", type=int, default=1,
                     help="memtest exit code (124 = time limit = full window)")
+    ap.add_argument("--mins", type=int, default=15,
+                    help="test window in minutes; the coverage floor is "
+                         "window minus one report interval")
     ap.add_argument("--pre-q")
     ap.add_argument("--post-q")
     ap.add_argument("--min-usable-gib", type=int, default=DEFAULT_MIN_USABLE_GIB)
@@ -146,7 +159,7 @@ def main():
 
     verdict, detail = classify(open(a.log, errors="replace").read(),
                                a.tested_bytes, a.rc, a.pre_q, a.post_q,
-                               a.min_usable_gib)
+                               a.min_usable_gib, a.mins)
     if a.md:
         print("| | |")
         print("|---|---|")

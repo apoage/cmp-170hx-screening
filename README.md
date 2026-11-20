@@ -35,7 +35,7 @@ rollup they came from.
 
 ## What it actually proves
 
-Four claims about your card, each with its own instrument, and none of them
+Six claims about your card, each with its own instrument, and none of them
 taken on trust from a single vendor tool:
 
 | Claim | How | Why it is not circular |
@@ -45,7 +45,7 @@ taken on trust from a single vendor tool:
 | The HBM runs at **full speed** | STREAM-style kernels vs a peak derived from the card's own bus width and memory clock | Nothing is looked up from a spec sheet; both operands are read off the device |
 | The memory is **sound** | `memtest_vulkan` pattern test over the whole free heap, on a verified-idle GPU | Coverage is a stated number of GiB, not "whatever the tool grabbed" |
 | The cooling is **intact** | Per-sample telemetry through the run → °C/W for core and HBM, compared against the batch median | Identical workload on every card ⇒ near-identical power ⇒ temperature is a direct read-out of heat transfer |
-| The silicon is **worth its price** | Card dossier: fuse defect words → latent VRAM per HBM stack and latent SM count; NVML counter → lifetime power-on hours | Read from the card's own fuse registers — not the policy floor the driver shows, and not anything the seller configured |
+| The silicon has **latent potential** | Card dossier: fuse defect words → latent VRAM per HBM stack and latent SM count; NVML counter → driver-recorded hours | Read from the card's own fuse registers — not the policy floor the driver shows. Latent = what the die has behind policy, not a promise of extra usable capacity |
 
 And one it discloses rather than proves: **provenance**. Ex-mining cards often
 have a blanked or damaged InfoROM. That is not a performance defect, but it
@@ -134,7 +134,7 @@ Soundness and speed are different claims. A card can pass the memory test and
 still be slow, so throughput is measured separately:
 
 ```console
-$ ~/vllm-env/bin/python bin/hx-bandwidth.py       # needs torch + CUDA
+$ <your-torch-venv>/bin/python bin/hx-bandwidth.py   # needs torch + CUDA
 card        : NVIDIA CMP 170HX  (70 SMs, 68.2 GB, 34 MB L2)
 memory      : 4096-bit HBM2e @ 1.728 GHz
 derived peak: 1769 GB/s  (= 4096 bit x 1.728 GHz x 2 DDR)

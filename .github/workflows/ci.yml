@@ -34,12 +34,19 @@ jobs:
         run: |
           V=bin/hx-vram-verdict.py
           F=tests/fixtures
-          [ "$(python3 $V $F/memtest-clean.txt 61847529062 --rc 124 | head -1)" = "PASS" ]
+          [ "$(python3 $V $F/memtest-clean.txt 61847529062 --rc 124 --mins 1 | head -1)" = "PASS" ]
+          # frozen 90 s in: rc=124 (our limit ended it) but only 60 s recorded
+          # of a 15-min window — must be INCONCLUSIVE, never PASS
+          [ "$(python3 $V $F/memtest-frozen.txt 61847529062 --rc 124 --mins 15 | head -1)" = "INCONCLUSIVE" ]
+          rc2=0; python3 $V $F/memtest-frozen.txt 61847529062 --rc 124 --mins 15 >/dev/null || rc2=$?
+          [ "$rc2" -eq 2 ]
+          # died early, no closing line: INCONCLUSIVE
+          [ "$(python3 $V $F/memtest-earlyexit.txt 61847529062 --rc 1 --mins 15 | head -1)" = "INCONCLUSIVE" ]
           [ "$(python3 $V $F/memtest-maskable.txt 61847529062 | head -1)" = "PASS-MASK" ]
           [ "$(python3 $V $F/memtest-scattered.txt 61847529062 | head -1)" = "FAIL" ]
           rc=0; python3 $V $F/memtest-scattered.txt 61847529062 >/dev/null || rc=$?
           [ "$rc" -eq 1 ]
-          OUT="$(python3 $V $F/memtest-clean.txt 61847529062 --rc 124 \
+          OUT="$(python3 $V $F/memtest-clean.txt 61847529062 --rc 124 --mins 1 \
                 --pre-q $F/ecc-q.txt --post-q $F/ecc-q-post-corrected.txt)"
           echo "$OUT" | head -1 | grep -qx "PASS-ECC"
           echo "$OUT" | grep -q "fixable"
