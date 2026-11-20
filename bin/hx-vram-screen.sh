@@ -86,9 +86,11 @@ fi
 # artefact is keyed to the card's own serial and the binding is re-derived per run.
 ALL=0
 PARALLEL=0
+IDENTIFY=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --all) ALL=1; shift ;;
+        --identify) IDENTIFY=1; shift ;;
         --parallel) ALL=1; PARALLEL=1; shift ;;
         --gpu) GPU="${2:?--gpu needs an index}"; shift 2 ;;
         --gpu=*) GPU="${1#*=}"; shift ;;
@@ -97,7 +99,7 @@ while [ $# -gt 0 ]; do
 done
 MINS="${1:-12}"
 TAG="${2:-}"
-case "$MINS" in ''|*[!0-9]*) echo "usage: hx-vram-screen.sh [--all|--gpu N] [MINUTES] [TAG] | --rollup"; exit 64 ;; esac
+case "$MINS" in ''|*[!0-9]*) echo "usage: hx-vram-screen.sh [--all|--gpu N] [--identify] [MINUTES] [TAG] | --rollup"; exit 64 ;; esac
 [ "$MINS" -ge 1 ] || { echo "usage: MINUTES must be >= 1 (0 would never time out)"; exit 64; }
 
 if [ "$ALL" = "1" ]; then
@@ -312,6 +314,62 @@ else
     HEAP="not measured (apt install vulkan-tools)"
 fi
 say "[2] Vulkan DEVICE_LOCAL heap: ${HEAP}"
+
+# ---------------------------------------------------- 2b. IDENTIFY-ONLY EXIT
+# The report of what the card IS, without any test claims: identity,
+# provenance, dossier (physical silicon + driver-recorded hours), Vulkan
+# heap, kernel history for this card. Writes <SERIAL>-identity.md — never
+# over a test report, never a FLEET row, never a verdict.
+if [ "$IDENTIFY" = 1 ]; then
+    IDREP="$BASE/results/${SN}-identity.md"
+    if [ "$DMESG_OK" -eq 1 ]; then
+        PCI_FULL_ID="$(echo "$BUSID" | sed 's/^00000000:/0000:/')"
+        "${DMESG_CMD[@]}" -T 2>/dev/null | grep -iE "xid|nvrm|pcie bus error" \
+            | grep -iE "${PCI_FULL_ID}|${UUID_FULL:-__none__}" | tail -10 \
+            > "$OUT/06-dmesg-history.txt" || :
+        HIST_ID="$(wc -l < "$OUT/06-dmesg-history.txt")"
+        KLOG="GPU-relevant history for this card: ${HIST_ID} line(s) (see run folder)"
+    else
+        KLOG="kernel log not readable — not measured"
+    fi
+    {
+        echo "# CMP 170HX — card identification"
+        echo
+        echo "**GPU serial:** ${SN}${TAG:+  (shelf tag: ${TAG})}"
+        echo "**GPU UUID:** ${UUID_FULL}   ·   **slot:** PCI ${BUS_SHORT}"
+        echo "**Date:** $(date -u '+%Y-%m-%d %H:%M') UTC"
+        echo "**Status: IDENTIFIED — NOT TESTED** (no soak was run; run \`hx 15\` for the acceptance screen)"
+        echo
+        echo "## 1. Identity"
+        echo '```'
+        sed -n '2p' "$OUT/01-identity.csv"
+        echo '```'
+        echo
+        echo "## 2. Card dossier (physical silicon + driver-recorded hours)"
+        echo
+        cat "$OUT/cardreport.md" 2>/dev/null || echo "(dossier not captured — see cardreport.console.txt)"
+        echo
+        echo "## 3. Provenance"
+        echo "classification: ${PROVENANCE:-n/a}"
+        echo
+        echo "## 4. Independent heap check (Khronos Vulkan)"
+        echo "DEVICE_LOCAL heap: ${HEAP}"
+        echo
+        echo "## 5. Kernel log"
+        echo "${KLOG}"
+        echo
+        echo "---"
+        echo
+        echo "This document states what the card **is**. It is not evidence of memory"
+        echo "integrity, thermals, or stability — those need the acceptance screen."
+        echo "Raw artefacts: \`$(basename "$OUT")/\` (hashed in \`SHA256SUMS\`)."
+    } > "$IDREP"
+    ( cd "$OUT" && sha256sum ./* 2>/dev/null | grep -v SHA256SUMS > SHA256SUMS )
+    say "identity report: $IDREP"
+    say "raw:             $OUT"
+    say "no test was run — for the acceptance screen: hx 15"
+    exit 0
+fi
 
 # ------------------------- 3. COMBINED VRAM TEST + THERMAL SOAK (one run)
 say "[3] running memtest_vulkan ${MINS} min with telemetry (test == soak)"

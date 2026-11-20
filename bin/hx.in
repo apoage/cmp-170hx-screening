@@ -7,6 +7,7 @@
 #   hx --all        -> screen every CMP 170HX in the box, one after another
 #   hx --rollup     -> compare the whole batch
 #   hx --card       -> card dossier: physical VRAM/SM potential, lifetime hours
+#   hx --identify   -> report of what the card IS — no soak, no verdict
 set -u
 SCREEN="@HERE@/bin/hx-vram-screen.sh"
 CARDREPORT="@HERE@/bin/cardreport.py"
@@ -24,7 +25,7 @@ case "${1:-}" in
     fi
     echo "hx: $CARDREPORT not found" >&2; exit 1 ;;
   -h|--help)
-    sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
     echo "   anything else is passed to hx-vram-screen.sh (--all --parallel --gpu N)"
     exit 0 ;;
 esac

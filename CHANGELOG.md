@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0 — 2026-11-20
+
+`--identify` / `hx --identify`: the report of what a card **is**, without any
+test claims. Identity + provenance + full card dossier (physical silicon,
+driver-recorded hours) + independent Vulkan heap + per-card kernel-log
+history, written to `<SERIAL>-identity.md`. Deliberately separate from the
+acceptance report: it never overwrites a test report, never writes a FLEET
+row, and its status line reads **IDENTIFIED — NOT TESTED** with a pointer to
+`hx 15`. Works with `--gpu N` and under `--all` for whole batches.
+
 ## 1.3.1 — 2026-11-20
 
 Two claim corrections from bench practice:

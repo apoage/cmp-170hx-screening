@@ -105,7 +105,8 @@ $ cd cmp-170hx-screening
 $ bash install.sh --service          # deps + memtest_vulkan + hx command + dashboard on :8097
 
 $ hx 15                              # screen the card in slot 0, 15 minutes
-$ hx --card                          # card dossier alone (no soak)
+$ hx --identify                      # report of what the card IS — no test run
+$ hx --card                          # card dossier alone (console only)
 $ hx --all 15                        # every 170HX in turn
 $ hx --parallel 15                   # every 170HX simultaneously
 $ hx --rollup                        # compare the batch
