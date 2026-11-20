@@ -20,8 +20,9 @@ optional nvidia-smi -q snapshots from before and after the run, and classifies:
 Error addresses come from memtest_vulkan's own reporting:
   "Error found. Mode <m>, total errors 0xN out of 0xN (P%)"
   "Errors address range: 0xSTART..=0xEND"
-Addresses are offsets into the TESTED region, so the lowest error address
-directly bounds the unconditionally-usable memory.
+Addresses are offsets into memtest_vulkan's BUFFER, not physical addresses
+(HBM is interleaved) — a high error offset makes a card a MASK-CANDIDATE for
+a smaller-geometry retest, never a pass.
 
 Usage:
   hx-vram-verdict.py LOG TESTED_BYTES [--rc N] [--pre-q FILE] [--post-q FILE]
@@ -76,8 +77,10 @@ def classify(log, tested_bytes, rc, pre_q, post_q, min_usable_gib, mins):
     # 30 s interval cost a real 15-min run ~50 s of recorded time (our own
     # PASS example recorded 848 s of 900). 45 s of slack broke every real
     # run; 90 s keeps the freeze protection (a run frozen at 60 s still
-    # reads INCONCLUSIVE).
-    expected_min = mins * 60 - 90
+    # reads INCONCLUSIVE). Floor of 30 s: mins*60-90 goes negative below
+    # 2 minutes, and even a 1-minute run must show one report interval —
+    # zero recorded time is never a pass.
+    expected_min = max(mins * 60 - 90, 30)
     errors = []          # (mode, count, start, end)
     error_markers = 0    # ANY error wording — backstop: unparsed ≠ pass
     clean_pass = False

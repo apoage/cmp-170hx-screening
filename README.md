@@ -1,7 +1,7 @@
 # cmp-170hx-screening
 
 Bench tooling for the NVIDIA CMP 170HX (GA100): an acceptance screen that
-fuses a full-heap VRAM pattern test with a thermal soak in one run, a card
+fuses a whole-free-heap VRAM pattern test with a thermal soak in one run, a card
 dossier read from the fuse registers over BAR0, and an identification mode —
 all stdlib-only Python plus one external test binary, ending in per-card
 reports with hashed raw evidence behind every number.
@@ -9,7 +9,7 @@ reports with hashed raw evidence behind every number.
 ```console
 $ bash bin/hx-vram-screen.sh 15
 === CMP 170HX screen — serial 1322621098890 — 20260828-094851 — 15 min ===
-[0] idle guard ok — 1 MiB used, full-heap coverage possible
+[0] idle guard ok — 1 MiB used, whole-free-heap coverage possible
 [1] NVIDIA CMP 170HX, 1322621098890, GPU-b638ea07-…, 92.00.6D.00.0A, 65536 MiB
 [1a] 0000:05:00.0: latent 80 GiB (policy 64), SMs 108/70, lifetime 4164.9 h
 [1b] provenance: DOCUMENTED — serial, board P/N and InfoROM all intact
@@ -221,6 +221,25 @@ kernel-log excerpts, so the binary itself defaults to `127.0.0.1`;
 `install.sh --service` deliberately opts into the bench LAN with
 `HX_BIND=0.0.0.0` (drop that line in `bench-setup/hx-dashboard.service.in` to
 keep it loopback).
+
+### Accessing the dashboard
+
+```console
+$ systemctl status hx-dashboard            # installed by install.sh --service
+$ curl -s http://127.0.0.1:8097/ | head    # on the bench itself
+```
+
+- On the bench: `http://127.0.0.1:8097`, or `http://<bench-ip>:8097` when the
+  service's `HX_BIND=0.0.0.0` is active.
+- From another machine without exposing the port:
+  `ssh -L 8097:127.0.0.1:8097 <bench>`, then open `http://127.0.0.1:8097`
+  locally — works even when the dashboard is loopback-only.
+- Console alternative: `bin/hx-tui.py` renders the same run state on `tty1`
+  or over `ssh -t`.
+
+The page serves the batch index (FLEET), per-run telemetry, the per-card
+reports and a self-contained shareable export; a JSON API lives under
+`/json/`. It is read-only — it cannot start, stop, or alter a run.
 
 ## Scope
 

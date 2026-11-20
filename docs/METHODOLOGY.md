@@ -286,7 +286,7 @@ seconds in gets sold as tested.
 ## 9. What a PASS does not mean
 
 - Not that the card is error-free. It means **no errors were detected across the
-  full heap, at operating temperature, over the stated duration**. Intermittent
+  tested heap (~97 % of free), at operating temperature, over the stated duration**. Intermittent
   faults evade any finite test.
 - Not that the memory is ECC-protected. It is not, and cannot be.
 - Not that the card will run this cool in your chassis. Thermal figures describe

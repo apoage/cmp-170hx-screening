@@ -42,6 +42,10 @@ jobs:
           [ "$rc2" -eq 2 ]
           # died early, no closing line: INCONCLUSIVE
           [ "$(python3 $V $F/memtest-earlyexit.txt 61847529062 --rc 1 --mins 15 | head -1)" = "INCONCLUSIVE" ]
+          # 1-minute window, frozen before the first report (zero recorded):
+          # the 30 s floor must keep this INCONCLUSIVE, not PASS
+          printf "memtest_vulkan v0.5.0\nTest buffer size: 1073741824 bytes\n" > /tmp/zero.txt
+          [ "$(python3 $V /tmp/zero.txt $((1<<30)) --rc 124 --mins 1 | head -1)" = "INCONCLUSIVE" ]
           [ "$(python3 $V $F/memtest-maskable.txt 61847529062 | head -1)" = "MASK-CANDIDATE" ]
           rc3=0; python3 $V $F/memtest-maskable.txt 61847529062 >/dev/null || rc3=$?
           [ "$rc3" -eq 1 ]

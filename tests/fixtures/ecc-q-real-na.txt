@@ -25,18 +25,18 @@ GPU 00000000:03:00.0
     Driver Model
         Current                                        : N/A
         Pending                                        : N/A
-    Serial Number                                      : 1322421001709
-    GPU UUID                                           : GPU-d7c7eb8e-7848-9701-24bb-744386978de4
+    Serial Number                                      : XXXXXXXXXXXX
+    GPU UUID                                           : GPU-XXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
     GPU PDI                                            : 0xb5f084f74f47875c
     Minor Number                                       : 0
     VBIOS Version                                      : 92.00.6D.00.0A
     MultiGPU Board                                     : No
     Board ID                                           : 0x300
-    Board Part Number                                  : 900-11001-0108-000
+    Board Part Number                                  : XXXX-XXXX-XXXX
     GPU Part Number                                    : 20C2-105-A1
     FRU Part Number                                    : N/A
     Platform Info
-        Chassis Serial Number                          : N/A
+        Chassis Serial Number                          : XXXXXXXXXXXX
         Slot Number                                    : N/A
         Tray Index                                     : N/A
         Host ID                                        : N/A
@@ -254,7 +254,7 @@ GPU 00000000:03:00.0
         Compute instance ID               : N/A
         Process ID                        : 1676
             Type                          : G
-            Name                          : /usr/lib/xorg/Xorg
+            Name                          : /usr/lib/xorg/proc
             Used GPU Memory               : 4 MiB
     Capabilities
         EGM                                            : disabled

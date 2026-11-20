@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.6.0 — 2026-11-20
+
+Third review round.
+
+- The fusegate guard the docs promised now exists in the code: the screen
+  inspects the loaded nvidia module for the patch-0010
+  `sec2-hs-fusegate-probe` marker string and hard-stops (the check our
+  internal preflight always had, now shipped).
+- Coverage floor gets a 30 s minimum: `mins*60-90` goes negative below
+  2-minute windows, so `hx 1` could PASS with zero recorded time. Now
+  `max(window-90, 30)`; the bash fallback uses the same floor (was still
+  -45). CI case added.
+- Fatal-Xid list drops 13/31/43 (often application-caused; still flagged
+  via the normal kernel-error path). Bench-verified first: a TERM-killed
+  memtest logs no Xid at all, so the kill path cannot spray false fatals.
+- memtest version grep matches the real `v`-prefixed banner.
+- Verdict docstring no longer claims error addresses bound usable memory.
+- Remaining "full heap" phrasing replaced with whole-free-heap / tested-heap
+  (~97 % of free) everywhere.
+- Real N/A-ECC fixture scrubbed of the donor card's serial/UUID (the ECC
+  lines are all the tests need); README gains an "Accessing the dashboard"
+  section (local URL, LAN bind, ssh -L tunnel, TUI alternative).
+
 ## 1.5.1 — 2026-11-20
 
 README rewritten as a technical reference: measurement/instrument focus,

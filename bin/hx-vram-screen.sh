@@ -182,7 +182,7 @@ if [ -n "$APPS" ] || [ "${USED:-0}" -gt 512 ]; then
     say "${APPS:-（memory allocated without a visible process）}"
     exit 2
 fi
-say "[0] idle guard ok — ${USED} MiB used, full-heap coverage possible"
+say "[0] idle guard ok — ${USED} MiB used, whole-free-heap coverage possible"
 
 # A locked card (stock 8/10 GiB) is not the product being sold, and its heap
 # is not the heap a buyer receives. The unlock is a precondition, not optional.
@@ -193,6 +193,21 @@ if [ "${TOTAL_MIB:-0}" -gt 0 ] && [ "${TOTAL_MIB:-0}" -lt 16000 ]; then
     say "  (upstream: https://github.com/amoghmunikote/cmpunlocker), COLD BOOT, then rerun."
     say "  Screening a locked card proves nothing about the silicon being sold."
     exit 3
+fi
+
+# Module provenance: the historical cmpunlocker patch 0010
+# (sec2-hs-fusegate-probe) loops WPR2 base/size writes + Booter re-exec and
+# CAN CORRUPT HOST RAM. Its marker string is unique to that patch (verified
+# against the full v0.4 series); a module carrying it is a hard stop.
+MODPATH="$(modinfo -n nvidia 2>/dev/null)"
+if [ -n "$MODPATH" ] && [ -r "$MODPATH" ]; then
+    FUSEGATE="$(strings "$MODPATH" 2>/dev/null | grep -c 'SEC2_DEBUG: HS ')"
+    if [ "${FUSEGATE:-0}" -gt 0 ]; then
+        say "ABORT: the loaded nvidia module carries the HS fusegate probe marker"
+        say "  (cmpunlocker patch 0010 sec2-hs-fusegate-probe). That patch can"
+        say "  corrupt host RAM. Rebuild from a checkout without it."
+        exit 3
+    fi
 fi
 # Kernel log access. Ubuntu blocks dmesg for normal users; try plain, then
 # passwordless sudo. If neither works, kernel-error checking reports
@@ -421,7 +436,7 @@ kill "$SAMPLER" 2>/dev/null; wait "$SAMPLER" 2>/dev/null
 nvidia-smi -i "$GPU" -q > "$OUT/03a-ecc-post.txt" 2>&1 || :  # ECC counters, after
 # what actually ran: version from its own banner, hash of the binary itself —
 # the tool can come from $PATH or any MTV_VERSION, so don't hard-code it
-MTV_VER="$(grep -m1 -oE 'memtest_vulkan [0-9][0-9.]*' "$OUT/03-memtest_vulkan.txt" 2>/dev/null | awk '{print $2}')"
+MTV_VER="$(grep -m1 -oE 'memtest_vulkan v?[0-9][0-9.]*' "$OUT/03-memtest_vulkan.txt" 2>/dev/null | awk '{print $2}')"
 MTV_VER="${MTV_VER:-unknown}"
 MTV_HASH="$(sha256sum "$MTV" 2>/dev/null | awk '{print $1}')"
 
@@ -435,6 +450,8 @@ MTV_HASH="$(sha256sum "$MTV" 2>/dev/null | awk '{print $1}')"
 # requested window; anything else is INCONCLUSIVE, never PASS.
 COVERED="$(grep -oE 'Passed +[0-9.]+ seconds' "$OUT/03-memtest_vulkan.txt" 2>/dev/null \
            | awk '{s+=$2} END{printf "%d", s+0}')"
+# same floor the verdict tool enforces: window minus 90 s, never below 30 s
+EXPECTED=$(( MINS * 60 - 90 )); [ "$EXPECTED" -lt 30 ] && EXPECTED=30
 if [ -f "$HXVV" ]; then
     # Granular verdict: PASS / PASS-ECC (fixable) / MASK-CANDIDATE (fails
     # geometry) / FAIL (not fixable), from the error addresses memtest_vulkan
@@ -449,7 +466,7 @@ elif grep -qiE "ERRORS FOUND|Error found|total errors" "$OUT/03-memtest_vulkan.t
     VRAM=FAIL
 elif grep -q "no any errors, testing PASSed" "$OUT/03-memtest_vulkan.txt"; then
     VRAM=PASS
-elif [ "${MTV_RC:-1}" -eq 124 ] && [ "${COVERED:-0}" -ge $(( MINS * 60 - 45 )) ]; then
+elif [ "${MTV_RC:-1}" -eq 124 ] && [ "${COVERED:-0}" -ge "$EXPECTED" ]; then
     # rc=124 means OUR time limit stopped it — and the recorded intervals must
     # cover the window minus one 30 s report interval + slack, so a tool that
     # froze 90 s in can no longer read as a pass.
@@ -520,10 +537,14 @@ if [ "$XIDS" != "not measured" ] && [ "$XIDS" -gt 0 ]; then
     # Fatal Xid classes (fallen-off-bus, MMU, GSP/RM internal, ECC-related):
     # a run that hit one must never carry a PASS-prefixed verdict.
     # Xid (PCI:0000:05:00): 79 — the CODE is after the closing paren; the
-    # code must not be read out of the PCI address digits
+    # code must not be read out of the PCI address digits. Fatal list =
+    # bus/MMU/RM-internal/ECC classes only; 13/31/43 are frequently
+    # application-caused and stay in the flagged-not-fatal path. Verified on
+    # the bench: a TERM-killed memtest logs NO Xid at all, so the kill path
+    # cannot spray false fatals.
     FATAL="$(grep -oE 'Xid \(PCI:[^)]*\): [0-9]+' "$OUT/06-errors-thisrun.txt" \
         | grep -oE '[0-9]+$' | sort -u \
-        | grep -xE '8|13|31|43|44|45|48|58|62|63|64|65|74|79|87|92|94|95' | tr '\n' ' ')"
+        | grep -xE '8|44|45|48|58|62|63|64|65|74|79|87|92|94|95' | tr '\n' ' ')"
     if [ -n "$FATAL" ]; then
         case "$VERDICT" in FAIL*) : ;; *)
             VERDICT="FAIL — FATAL GPU ERROR DURING RUN (Xid ${FATAL})" ;; esac
