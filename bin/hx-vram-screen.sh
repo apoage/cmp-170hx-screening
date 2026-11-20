@@ -159,7 +159,6 @@ if [ -f "$BASE/results/${SN}.md" ] && [ -n "$UUID_FULL" ] \
     echo "NOTE: serial already used by a different card — filing this one as ${SN}"
 fi
 
-LABEL="$SN"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OUT="$BASE/results/${SN}_${STAMP}"
 mkdir -p "$OUT"
@@ -197,6 +196,8 @@ CARDREPORT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cardreport.py"
 if [ -f "$CARDREPORT" ]; then
     say "[1a] card dossier (physical silicon + lifetime hours)"
     if sudo -n true 2>/dev/null; then
+        # shellcheck disable=SC2024  # redirect stays with the invoking user on
+        # purpose: the console capture must be owned by the bench user, not root
         sudo -n python3 "$CARDREPORT" \
             --out "$OUT/cardreport.md" --json "$OUT/cardreport.json" \
             >"$OUT/cardreport.console.txt" 2>&1
@@ -402,7 +403,7 @@ if [ -f "$FLEET" ] && ! head -1 "$FLEET" | grep -qxF "$FLEET_HDR"; then
     say "NOTE: FLEET.csv had an older schema — archived as $(basename "${FLEET%.csv}-legacy-${STAMP}.csv")"
 fi
 [ -f "$FLEET" ] || echo "$FLEET_HDR" > "$FLEET"
-IFS=',' read -r p_core p_hbm cw_core cw_hbm s_c s_m pw thr tverd <<< "$FLEETLINE"
+IFS=',' read -r p_core p_hbm cw_core cw_hbm _ _ _ _ _ <<< "$FLEETLINE"
 echo "${SN},${STAMP},${VERDICT},${PROVENANCE},${VRAM},${THERMAL},${cw_core},${cw_hbm},${p_core},${p_hbm},${BW}" >> "$FLEET"
 
 # --------------------------------------------------------------- 8. REPORT

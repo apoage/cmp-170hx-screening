@@ -95,13 +95,18 @@ one-time bench job, see **[bench-setup/](bench-setup/)**.
 ```console
 $ git clone https://github.com/apoage/cmp-170hx-screening
 $ cd cmp-170hx-screening
-$ bash install.sh --service          # deps + memtest_vulkan + dashboard on :8097
+$ bash install.sh --service          # deps + memtest_vulkan + hx command + dashboard on :8097
 
-$ bash bin/hx-vram-screen.sh 15      # screen the card in slot 0, 15 minutes
-$ bash bin/hx-vram-screen.sh --all 15        # every 170HX in turn
-$ bash bin/hx-vram-screen.sh --parallel 15   # every 170HX simultaneously
-$ bash bin/hx-vram-screen.sh --rollup        # compare the batch
+$ hx 15                              # screen the card in slot 0, 15 minutes
+$ hx --card                          # card dossier alone (no soak)
+$ hx --all 15                        # every 170HX in turn
+$ hx --parallel 15                   # every 170HX simultaneously
+$ hx --rollup                        # compare the batch
 ```
+
+(`install.sh` puts the `hx` command in `/usr/local/bin` when it has sudo, else
+`~/.local/bin`. The long forms — `bash bin/hx-vram-screen.sh 15`,
+`sudo python3 bin/cardreport.py` — work straight from the checkout too.)
 
 Results land in `~/vramscreen/results/` (override with `HX_BASE`):
 

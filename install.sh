@@ -77,7 +77,39 @@ else
     say "WARNING: cardreport selftest FAILED — card dossier output would be suspect"
 fi
 
-# ---- 4. dashboard service (optional) --------------------------------------
+# ---- 4. the hx command -----------------------------------------------------
+# One word at the bench: `hx 15` runs the screen, `hx --card` prints the
+# card dossier. Installed system-wide when sudo is available, otherwise
+# into ~/.local/bin (must be on PATH).
+HX_DIR="$HOME/.local/bin"
+if sudo -n true 2>/dev/null; then
+    HX_DIR="/usr/local/bin"
+fi
+HX_TARGET="$HX_DIR/hx"
+mkdir -p "$HOME/.local/bin"
+if [ -e "$HX_TARGET" ] && [ ! -e "${HX_TARGET}.bak" ]; then
+    if [ "$HX_DIR" = "/usr/local/bin" ]; then
+        sudo cp -a "$HX_TARGET" "${HX_TARGET}.bak"
+    else
+        cp -a "$HX_TARGET" "${HX_TARGET}.bak"
+    fi
+    say "existing hx command backed up as $(basename "$HX_TARGET").bak"
+fi
+HX_TMP="$(mktemp)"
+sed -e "s|@HERE@|$HERE|g" "$HERE/bin/hx.in" > "$HX_TMP"
+if [ "$HX_DIR" = "/usr/local/bin" ]; then
+    sudo install -m 0755 "$HX_TMP" "$HX_TARGET"
+else
+    install -m 0755 "$HX_TMP" "$HX_TARGET"
+fi
+rm -f "$HX_TMP"
+say "hx command installed: $HX_TARGET"
+case ":$PATH:" in
+    *":$HX_DIR:"*) : ;;
+    *) say "NOTE: $HX_DIR is not on your PATH — add it to use 'hx'" ;;
+esac
+
+# ---- 5. dashboard service (optional) --------------------------------------
 if [ "${1:-}" = "--service" ]; then
     say "installing hx-dashboard.service on port ${HX_PORT:-8097}"
     sed -e "s|@USER@|$USER|g" -e "s|@BASE@|$BASE|g" -e "s|@HERE@|$HERE|g" \
@@ -88,5 +120,6 @@ if [ "${1:-}" = "--service" ]; then
     sudo systemctl --no-pager status hx-dashboard.service | head -5
 fi
 
-say "done. Screen a card with:  bash $HERE/bin/hx-vram-screen.sh 15"
-say "      Card dossier alone:  sudo python3 $HERE/bin/cardreport.py"
+say "done. Screen a card with:  hx 15"
+say "      (or: bash $HERE/bin/hx-vram-screen.sh 15)"
+say "      Card dossier alone:  hx --card"

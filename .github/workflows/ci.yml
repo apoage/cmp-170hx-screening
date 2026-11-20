@@ -16,7 +16,13 @@ jobs:
       - name: shellcheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y shellcheck
-          shellcheck -S warning bin/hx-vram-screen.sh install.sh bench-setup/hx-install-unlock.sh
+          shellcheck -S warning bin/hx-vram-screen.sh bin/hx.in install.sh bench-setup/hx-install-unlock.sh
+
+      - name: hx.in template substitutes cleanly
+        run: |
+          sed -e 's|@HERE@|/tmp/chk|g' bin/hx.in > /tmp/hx
+          bash -n /tmp/hx
+          grep -q '@HERE@' /tmp/hx && { echo "unsubstituted @HERE@ left"; exit 1; } || true
 
       - name: python compile
         run: python3 -m py_compile bin/hx-thermal-analyze.py bin/hx-dashboard.py bin/hx-tui.py bin/hx-bandwidth.py bin/cardreport.py
