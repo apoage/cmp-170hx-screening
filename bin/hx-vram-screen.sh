@@ -201,7 +201,7 @@ fi
 # CORRUPT HOST RAM. The guard exists so our own benches can never boot a
 # module built with it again. The marker string is unique to that patch —
 # upstream builds log plain SEC2_DEBUG lines (e.g. SEC2_DEBUG_HEAP), and
-# the narrower 'SEC2DEBUG: HS ' avoids false hits on them.
+# the narrower 'SEC2_DEBUG: HS ' avoids false hits on them.
 # DKMS often stores modules compressed (.ko.zst/.ko.xz): unpack before
 # grepping, and say "not checked" — never nothing — when unreadable.
 MODPATH="$(modinfo -n nvidia 2>/dev/null)"
@@ -215,7 +215,7 @@ else
         *.gz)  CAT="gzip -dc" ;;
         *)     CAT="cat" ;;
     esac
-    if FUSEGATE="$($CAT "$MODPATH" 2>/dev/null | strings 2>/dev/null | grep -a -c 'SEC2DEBUG: HS ')"; then
+    if FUSEGATE="$($CAT "$MODPATH" 2>/dev/null | strings 2>/dev/null | grep -a -c 'SEC2_DEBUG: HS ')"; then
         if [ "${FUSEGATE:-0}" -gt 0 ]; then
             say "ABORT: the nvidia module carries the HS fusegate probe marker"
             say "  (local patch 0010-sec2-hs-fusegate-probe — never part of"
