@@ -11,12 +11,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: bash syntax
-        run: bash -n bin/hx-vram-screen.sh install.sh bench-setup/hx-install-unlock.sh
+        run: bash -n bin/hx-vram-screen.sh bin/hx-module-check.sh install.sh bench-setup/hx-install-unlock.sh
 
       - name: shellcheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y shellcheck
-          shellcheck -S warning bin/hx-vram-screen.sh bin/hx.in install.sh bench-setup/hx-install-unlock.sh
+          shellcheck -S warning bin/hx-vram-screen.sh bin/hx-module-check.sh bin/hx.in install.sh bench-setup/hx-install-unlock.sh
 
       - name: hx.in template substitutes cleanly
         run: |
@@ -83,6 +83,23 @@ jobs:
           ! (echo "$HIT" | grep -q "0000:03:00")     # other card must not match
           CODES="$(echo "$HIT" | grep -oE 'Xid \(PCI:[^)]*\): [0-9]+' | grep -oE '[0-9]+$' | sort -u | tr '\n' ' ')"
           [ "$CODES" = "79 " ]
+
+      - name: module provenance guard against fake modules
+        # clean module must read "ok" (grep -c exits 1 on zero matches — a
+        # past bug made every clean module read "not checked"); marked
+        # modules must abort with exit 3, plain and compressed; an unreadable
+        # module must read "not checked".
+        run: |
+          G=bin/hx-module-check.sh
+          printf 'NVRM benign SEC2_DEBUG_HEAP line\n' > /tmp/clean.ko
+          printf 'NVRM SEC2_DEBUG: HS fusegate marker\n' > /tmp/marked.ko
+          gzip -c /tmp/clean.ko  > /tmp/clean.ko.gz
+          gzip -c /tmp/marked.ko > /tmp/marked.ko.gz
+          bash "$G" /tmp/clean.ko    | grep -q "provenance: ok"
+          bash "$G" /tmp/clean.ko.gz | grep -q "provenance: ok"
+          rc=0; bash "$G" /tmp/marked.ko    >/dev/null 2>&1 || rc=$?; [ "$rc" -eq 3 ]
+          rc=0; bash "$G" /tmp/marked.ko.gz >/dev/null 2>&1 || rc=$?; [ "$rc" -eq 3 ]
+          bash "$G" /tmp/nonexistent.ko.zst | grep -q "not checked"
 
       - name: cardreport selftest
         # Validates the dossier analytics (defect masks -> latent VRAM/SMs)

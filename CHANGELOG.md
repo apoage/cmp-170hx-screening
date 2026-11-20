@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.6.2 — 2026-11-20
+
+Guard logic fix (fourth review): a CLEAN module always read "not checked" —
+`grep -c` prints 0 but exits 1 on zero matches, so the read was treated as
+failed, and the srcversion cross-check was unreachable. The guard now lives
+in `bin/hx-module-check.sh` (callable standalone, explicit-path mode for
+tests): decompressor-checked first, `|| :` on the count, "ok" on clean,
+exit 3 on marker, srcversion comparison actually reachable. Dropped the
+`strings` dependency — `grep -a` searches binary data directly. CI runs the
+five-case fake-module matrix (clean/marked, plain/gz, unreadable) so the
+exit-code semantics cannot regress.
+
 ## 1.6.1 — 2026-11-20
 
 Attribution and robustness corrections.

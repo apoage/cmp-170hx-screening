@@ -195,40 +195,17 @@ if [ "${TOTAL_MIB:-0}" -gt 0 ] && [ "${TOTAL_MIB:-0}" -lt 16000 ]; then
     exit 3
 fi
 
-# Module provenance: 0010-sec2-hs-fusegate-probe was a LOCAL experimental
-# patch from our own bench work (never part of cmpunlocker, exists nowhere
-# upstream) that loops WPR2 base/size writes + Booter re-exec and CAN
-# CORRUPT HOST RAM. The guard exists so our own benches can never boot a
-# module built with it again. The marker string is unique to that patch —
-# upstream builds log plain SEC2_DEBUG lines (e.g. SEC2_DEBUG_HEAP), and
-# the narrower 'SEC2_DEBUG: HS ' avoids false hits on them.
-# DKMS often stores modules compressed (.ko.zst/.ko.xz): unpack before
-# grepping, and say "not checked" — never nothing — when unreadable.
-MODPATH="$(modinfo -n nvidia 2>/dev/null)"
-MODSRC="$(cat /sys/module/nvidia/srcversion 2>/dev/null)"
-if [ -z "$MODPATH" ] || [ ! -r "$MODPATH" ]; then
-    say "module provenance: not checked (no readable module file)"
+# Module provenance: refuse a module carrying the 0010 fusegate marker.
+# The check lives in bin/hx-module-check.sh (unpacks compressed DKMS
+# modules, greps -a so binutils is not required, srcversion cross-check,
+# honest "not checked" when unreadable — and fixture-tested in CI).
+MODCHECK="${MODCHECK:-$HERE/hx-module-check.sh}"
+[ -f "$MODCHECK" ] || MODCHECK="$BASE/hx-module-check.sh"
+if [ -f "$MODCHECK" ]; then
+    bash "$MODCHECK" 2>&1 | tee -a "$OUT/run.log"
+    [ "${PIPESTATUS[0]}" -eq 3 ] && exit 3
 else
-    case "$MODPATH" in
-        *.zst) CAT="zstdcat" ;;
-        *.xz)  CAT="xzcat" ;;
-        *.gz)  CAT="gzip -dc" ;;
-        *)     CAT="cat" ;;
-    esac
-    if FUSEGATE="$($CAT "$MODPATH" 2>/dev/null | strings 2>/dev/null | grep -a -c 'SEC2_DEBUG: HS ')"; then
-        if [ "${FUSEGATE:-0}" -gt 0 ]; then
-            say "ABORT: the nvidia module carries the HS fusegate probe marker"
-            say "  (local patch 0010-sec2-hs-fusegate-probe — never part of"
-            say "  cmpunlocker). It can corrupt host RAM. Rebuild without it."
-            exit 3
-        fi
-        if [ -n "$MODSRC" ] && [ "$MODSRC" != "$(modinfo -F srcversion nvidia 2>/dev/null)" ]; then
-            say "NOTE: loaded module srcversion differs from the file on disk —"
-            say "  the provenance check ran against the file, not the loaded module"
-        fi
-    else
-        say "module provenance: not checked (module unreadable or decompressor missing)"
-    fi
+    say "module provenance: not checked (hx-module-check.sh not found)"
 fi
 # Kernel log access. Ubuntu blocks dmesg for normal users; try plain, then
 # passwordless sudo. If neither works, kernel-error checking reports
