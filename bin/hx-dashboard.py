@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """CMP 170HX screening dashboard — browse runs, watch the live one, export a
-customer-ready report for any card.
+per-card report for any card.
 
 Deliberately stdlib-only: this runs unattended on the bench box from boot, so it
 must not depend on pip, a venv, or network access. It only ever READS from

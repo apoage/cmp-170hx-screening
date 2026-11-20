@@ -3,7 +3,7 @@
 
 WHAT THIS IS FOR
   The screening report proves the memory is *sound*. This proves it is *fast*,
-  which is the other half of what a buyer is paying for: a 170HX whose heap
+  which is the other half of the picture: a 170HX whose heap
   passes but whose HBM runs at a fraction of spec is a different card from the
   one in the listing.
 

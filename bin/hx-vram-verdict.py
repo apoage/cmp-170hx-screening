@@ -121,7 +121,7 @@ def classify(log, tested_bytes, rc, pre_q, post_q, min_usable_gib, mins):
 
     # ECC deltas across the run, when the card exposes counters at all.
     # The note is ALWAYS set — a None note crashed --md and printed a
-    # literal '- None' line into buyer reports.
+    # literal '- None' line into reports.
     corr_delta = unc_delta = 0
     ecc_readable = False
     pre, post = ecc_totals(pre_q) if pre_q else None, ecc_totals(post_q) if post_q else None
@@ -132,8 +132,7 @@ def classify(log, tested_bytes, rc, pre_q, post_q, min_usable_gib, mins):
             ecc_note = "ECC uncorrectable events during run: +%d" % unc_delta
         elif corr_delta > 0:
             ecc_note = ("ECC corrected (single-bit) events during run: +%d — "
-                        "disclosed as a finding; corrected errors on a resale "
-                        "card are a fact to weigh, not a pass note" % corr_delta)
+                        "disclosed as a finding" % corr_delta)
         else:
             ecc_note = "ECC counters readable: no corrected or uncorrectable events during run"
     else:
@@ -169,7 +168,7 @@ def classify(log, tested_bytes, rc, pre_q, post_q, min_usable_gib, mins):
         return ("FAIL", [
             "errors: %d in %d range(s), lowest at %d/%d GiB" %
             (total, len(errors), lowest // GIB, heap_gib), ecc_note,
-            "FAIL — errors reach into the always-sellable region (below the "
+            "FAIL — errors reach into the always-usable region (below the "
             "%d GiB minimum geometry); not fixable by masking" % min_usable_gib])
 
     if (clean_pass or rc == 124) and covered >= expected_min:
