@@ -234,7 +234,7 @@ if [ -f "$CARDREPORT" ]; then
             >"$OUT/cardreport.console.txt" 2>&1
     fi
     if [ -f "$OUT/cardreport.json" ]; then
-        python3 - "$OUT/cardreport.json" >> "$OUT/run.log" <<'PYDOSSIER'
+        python3 - "$OUT/cardreport.json" <<'PYDOSSIER' | tee -a "$OUT/run.log"
 import json, sys
 try:
     for c in json.load(open(sys.argv[1])):
