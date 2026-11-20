@@ -45,6 +45,8 @@ MTV="${MTV:-$BASE/memtest_vulkan}"
 [ -x "$MTV" ] || MTV="$(command -v memtest_vulkan 2>/dev/null || echo "$MTV")"
 ANALYZE="${ANALYZE:-$HERE/hx-thermal-analyze.py}"
 [ -f "$ANALYZE" ] || ANALYZE="$BASE/hx-thermal-analyze.py"
+HXVV="${HXVV:-$HERE/hx-vram-verdict.py}"
+[ -f "$HXVV" ] || HXVV="$BASE/hx-vram-verdict.py"
 INTERVAL=2
 # The parallel launcher writes per-child logs here before any child has had a
 # chance to create it, so it cannot be left to the child's own mkdir.
@@ -178,6 +180,17 @@ if [ -n "$APPS" ] || [ "${USED:-0}" -gt 512 ]; then
     exit 2
 fi
 say "[0] idle guard ok — ${USED} MiB used, full-heap coverage possible"
+
+# A locked card (stock 8/10 GiB) is not the product being sold, and its heap
+# is not the heap a buyer receives. The unlock is a precondition, not optional.
+TOTAL_MIB="$(nvidia-smi -i "$GPU" --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | tr -dc '0-9')"
+if [ "${TOTAL_MIB:-0}" -gt 0 ] && [ "${TOTAL_MIB:-0}" -lt 16000 ]; then
+    say "ABORT: card reports ${TOTAL_MIB} MiB total — it is LOCKED (stock 8/10 GiB)."
+    say "  Install CMPUnlocker FIRST: bash bench-setup/hx-install-unlock.sh"
+    say "  (upstream: https://github.com/amoghmunikote/cmpunlocker), COLD BOOT, then rerun."
+    say "  Screening a locked card proves nothing about the silicon being sold."
+    exit 3
+fi
 DMESG_PRE="$(dmesg 2>/dev/null | wc -l)"      # baseline: everything below is history
 
 # ------------------------------------------------------------ 1. IDENTITY
@@ -322,10 +335,12 @@ nvidia-smi -i "$GPU" \
     --format=csv,noheader,nounits -l "$INTERVAL" > "$CSV" 2>&1 &
 SAMPLER=$!
 sleep 6                                    # capture idle baseline before load
+nvidia-smi -i "$GPU" -q > "$OUT/03a-ecc-pre.txt" 2>&1 || :   # ECC counters, before
 timeout -s TERM "${MINS}m" "$MTV" "$MTV_IDX" "$TEST_BYTES" </dev/null > "$OUT/03-memtest_vulkan.txt" 2>&1
 MTV_RC=$?          # 124 = our time limit ended it, i.e. it ran the WHOLE window
 sleep 4                                    # let the tail of the curve land
 kill "$SAMPLER" 2>/dev/null; wait "$SAMPLER" 2>/dev/null
+nvidia-smi -i "$GPU" -q > "$OUT/03a-ecc-post.txt" 2>&1 || :  # ECC counters, after
 
 # Verdict. Binding the test to a specific device makes the binary run as the
 # WORKER process, and the worker does not print the parent's closing verdict
@@ -337,7 +352,17 @@ kill "$SAMPLER" 2>/dev/null; wait "$SAMPLER" 2>/dev/null
 # requested window; anything else is INCONCLUSIVE, never PASS.
 COVERED="$(grep -oE 'Passed +[0-9.]+ seconds' "$OUT/03-memtest_vulkan.txt" 2>/dev/null \
            | awk '{s+=$2} END{printf "%d", s+0}')"
-if grep -qiE "ERRORS FOUND|Error found|total errors" "$OUT/03-memtest_vulkan.txt"; then
+if [ -f "$HXVV" ]; then
+    # Granular verdict: PASS / PASS-ECC (fixable) / PASS-MASK (reducible
+    # geometry) / FAIL (not fixable), from the error addresses memtest_vulkan
+    # itself reports plus the ECC counter delta across the run.
+    VRAM_RESULT="$(python3 "$HXVV" "$OUT/03-memtest_vulkan.txt" "$TEST_BYTES" \
+        --rc "${MTV_RC:-1}" \
+        --pre-q "$OUT/03a-ecc-pre.txt" --post-q "$OUT/03a-ecc-post.txt" 2>&1)"
+    VRAM="$(printf '%s\n' "$VRAM_RESULT" | head -1)"
+    printf '%s\n' "$VRAM_RESULT" | tail -n +2 > "$OUT/03b-vram-verdict.md"
+    printf '%s\n' "$VRAM_RESULT" | tail -n +2 | sed 's/^/    /' | tee -a "$OUT/run.log"
+elif grep -qiE "ERRORS FOUND|Error found|total errors" "$OUT/03-memtest_vulkan.txt"; then
     VRAM=FAIL
 elif grep -q "no any errors, testing PASSed" "$OUT/03-memtest_vulkan.txt"; then
     VRAM=PASS
@@ -353,7 +378,9 @@ else
 fi
 BW="$(grep -oE '[0-9]+\.?[0-9]*GB/sec' "$OUT/03-memtest_vulkan.txt" | sort -t G -k1 -g | tail -1)"
 say "    VRAM: $VRAM   covered: ${COVERED}s   peak throughput: ${BW:-n/a}   samples: $(wc -l < "$CSV")"
-[ "$VRAM" = FAIL ] && grep -iE "error found|total errors" "$OUT/03-memtest_vulkan.txt" | head -5 | tee -a "$OUT/run.log"
+case "$VRAM" in FAIL|PASS-MASK)
+    grep -iE "error found|total errors|address range" "$OUT/03-memtest_vulkan.txt" \
+        | head -6 | tee -a "$OUT/run.log" ;; esac
 
 # ------------------------------------------------------- 4. THERMAL CURVE
 python3 "$ANALYZE" "$CSV" "$INTERVAL" > "$OUT/04-thermal.md" 2>&1
@@ -385,7 +412,13 @@ say "[6] kernel errors during this run: ${XIDS}  (pre-existing in log: ${HIST})"
 
 # -------------------------------------------------------------- 7. VERDICT
 VERDICT=PASS
-case "$VRAM" in PASS) : ;; FAIL) VERDICT="FAIL — VRAM ERRORS" ;; *) VERDICT="INCONCLUSIVE — rerun" ;; esac
+case "$VRAM" in
+    PASS) : ;;
+    PASS-ECC)  VERDICT="PASS — ECC-corrected errors disclosed" ;;
+    PASS-MASK) VERDICT="PASS — reducible geometry (see VRAM section)" ;;
+    FAIL) VERDICT="FAIL — VRAM ERRORS" ;;
+    *) VERDICT="INCONCLUSIVE — rerun" ;;
+esac
 [ "$CUDA" = FAIL ] && VERDICT="FAIL — VRAM ERRORS"
 [ "$XIDS" -gt 0 ] && [ "$VERDICT" = PASS ] && VERDICT="PASS — kernel errors during run"
 case "$THERMAL" in
@@ -459,6 +492,8 @@ Read through **Khronos Vulkan**, a driver path independent of NVIDIA's own tools
 | Peak throughput | ${BW:-n/a} |
 | Result | **${VRAM}** |
 
+$(sed 's/^/- /' "$OUT/03b-vram-verdict.md" 2>/dev/null)
+
 The GPU was verified idle before the run. Had any process held memory, the test
 would have covered only the free remainder; the run is blocked in that condition
 precisely so a partial pass cannot be mistaken for a full one.
@@ -466,9 +501,7 @@ precisely so a partial pass cannot be mistaken for a full one.
 $(cat "$OUT/04-thermal.md" | sed '/<!--FLEET/d')
 
 ## 6. Scope and limits
-- **No ECC.** This card ships with ECC fused off, so there is no hardware error
-  correction and no error counter to read afterwards. Pattern testing is the
-  only available instrument; it detects errors rather than correcting them.
+- $(grep -m1 "^ECC" "$OUT/03b-vram-verdict.md" 2>/dev/null || echo "**No ECC.** This card ships with ECC fused off, so there is no hardware error correction and no error counter to read afterwards. Pattern testing is the only available instrument; it detects errors rather than correcting them.")
 - A pass means no errors were detected across the full heap, at operating
   temperature, over the stated duration. Intermittent faults can evade any
   finite test.

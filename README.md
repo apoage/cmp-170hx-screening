@@ -89,8 +89,15 @@ GA100-only, and applying it anywhere else would print fiction.
 
 ## Quick start
 
-Requires a 170HX that is already unlocked and visible to the driver — that is a
-one-time bench job, see **[bench-setup/](bench-setup/)**.
+**Step 0 — the unlock comes first.** The screen refuses a locked card: a stock
+8/10 GiB card is not the product being sold, and its heap is not the heap a
+buyer receives. Install [CMPUnlocker](https://github.com/amoghmunikote/cmpunlocker)
+via **[bench-setup/hx-install-unlock.sh](bench-setup/)**, cold boot, and only
+then screen:
+
+```console
+$ bash bench-setup/hx-install-unlock.sh    # driver + CMPUnlocker (then COLD BOOT)
+```
 
 ```console
 $ git clone https://github.com/apoage/cmp-170hx-screening
@@ -175,12 +182,23 @@ screen in progress.
 
 ## Verdicts
 
-| Verdict | Meaning |
+Memory errors are graded, not just counted:
+
+| VRAM result | Meaning |
+|---|---|
+| `PASS` | No errors detected over proven full-heap coverage |
+| `PASS-ECC` | Pattern-clean, but the ECC counters advanced with **corrected** (single-bit, fixable) errors during the run — disclosed, sound for duty; disclosed, not hidden |
+| `PASS-MASK` | Errors exist, but every error address sits above a heap boundary a smaller unlock geometry can exclude — a **reducible-geometry** card: re-unlock smaller, retest, sell at the lower capacity. The report states the usable GiB |
+| `FAIL` | Errors reach below the smallest standard geometry (40 GiB), or ECC logged **uncorrectable** events — not fixable by masking. Do not ship |
+
+| Overall verdict | Meaning |
 |---|---|
 | `PASS` | No memory errors, no kernel errors during the run, thermals in band |
+| `PASS — ECC-corrected errors disclosed` | `PASS-ECC` above |
+| `PASS — reducible geometry` | `PASS-MASK` above — sell at the stated lower capacity after re-unlock + retest |
 | `PASS — SERVICE COOLING` | Memory is sound; the card is a repaste/repad candidate |
 | `PASS — kernel errors during run` | Memory test clean but the kernel logged Xid/NVRM. Investigate before shipping |
-| `FAIL — VRAM ERRORS` | Miscompares found. Do not ship |
+| `FAIL — VRAM ERRORS` | Not fixable. Do not ship |
 | `INCONCLUSIVE — rerun` | The test did not run the full window. **Never** read as a pass |
 
 There is no verdict for "probably fine". A run that cannot prove it covered its

@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.2.0 — 2026-11-20
+
+VRAM errors are now graded, not just counted — and the unlock is a hard
+precondition.
+
+- `bin/hx-vram-verdict.py` — granular VRAM verdict from memtest_vulkan's own
+  error addresses plus the ECC counter delta across the run:
+  `PASS` (clean) / `PASS-ECC` (corrected single-bit errors during the run —
+  fixable, disclosed) / `PASS-MASK` (every error address above a boundary a
+  smaller unlock geometry excludes — reducible-geometry card, report states
+  the usable GiB) / `FAIL` (errors below the 40 GiB minimum geometry or
+  uncorrectable ECC events — not fixable). `INCONCLUSIVE` unchanged. Exit
+  code mirrors the verdict; fixture-tested in CI.
+- `hx-vram-screen.sh` captures `nvidia-smi -q` before/after the soak for the
+  ECC delta, embeds the verdict detail in report §4, and the report's "no
+  ECC" scope note is now conditional on what the card actually exposes.
+- Unlock-first gate: the screen aborts on a locked card (under 16 GiB total)
+  with instructions to install CMPUnlocker first (bench-setup/), cold boot,
+  and rerun. Quick start leads with step 0.
+
 ## 1.1.0 — 2026-11-20
 
 Card dossier: the report now tells you what the silicon is worth, not just

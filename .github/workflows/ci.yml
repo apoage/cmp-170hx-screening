@@ -25,7 +25,24 @@ jobs:
           grep -q '@HERE@' /tmp/hx && { echo "unsubstituted @HERE@ left"; exit 1; } || true
 
       - name: python compile
-        run: python3 -m py_compile bin/hx-thermal-analyze.py bin/hx-dashboard.py bin/hx-tui.py bin/hx-bandwidth.py bin/cardreport.py
+        run: python3 -m py_compile bin/hx-thermal-analyze.py bin/hx-dashboard.py bin/hx-tui.py bin/hx-bandwidth.py bin/cardreport.py bin/hx-vram-verdict.py
+
+      - name: vram verdict classifier against fixtures
+        # PASS / PASS-ECC (correctable delta) / PASS-MASK (errors above the
+        # 40 GiB geometry floor) / FAIL (scattered) — the classification a
+        # seller prices from, tested without a GPU.
+        run: |
+          V=bin/hx-vram-verdict.py
+          F=tests/fixtures
+          [ "$(python3 $V $F/memtest-clean.txt 61847529062 --rc 124 | head -1)" = "PASS" ]
+          [ "$(python3 $V $F/memtest-maskable.txt 61847529062 | head -1)" = "PASS-MASK" ]
+          [ "$(python3 $V $F/memtest-scattered.txt 61847529062 | head -1)" = "FAIL" ]
+          python3 $V $F/memtest-scattered.txt 61847529062; [ $? -eq 1 ]
+          OUT="$(python3 $V $F/memtest-clean.txt 61847529062 --rc 124 \
+                --pre-q $F/ecc-q.txt --post-q $F/ecc-q-post-corrected.txt)"
+          echo "$OUT" | head -1 | grep -qx "PASS-ECC"
+          echo "$OUT" | grep -q "fixable"
+          echo "$OUT" | grep -q "usable" || true   # mask detail only on MASK runs
 
       - name: cardreport selftest
         # Validates the dossier analytics (defect masks -> latent VRAM/SMs)

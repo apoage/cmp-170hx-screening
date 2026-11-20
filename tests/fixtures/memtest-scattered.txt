@@ -1,0 +1,9 @@
+memtest_vulkan 0.5.0
+Test buffer size: 61847529062 bytes, device local type
+Error found. Mode INITIAL_READ, total errors 0x3 out of 0x400000 (0.00001144%)
+Errors address range: 0x40000000..=0x4000007F
+  iteration:2
+Error found. Mode NEXT_RE_READ, total errors 0x2 out of 0x400000 (0.00000763%)
+Errors address range: 0x900000000..=0x90000003F
+  iteration:3
+Passed 30.00 seconds. Errors: 0x5. Read 1216.0GB Write 592.7GB
