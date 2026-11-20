@@ -216,7 +216,7 @@ FREE_MIB="$(nvidia-smi -i "$GPU" --query-gpu=memory.free --format=csv,noheader,n
 # idle guard above already established the GPU is quiet. Root gets the fuse
 # reads; without root it degrades to the NVML/identity part only.
 CARDREPORT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cardreport.py"
-# Scope the dossier to THIS card: on a multi-card bench the buyer's report
+# Scope the dossier to THIS card: on a multi-card bench the per-card report
 # must not contain the other cards' dossiers, serials and UUIDs. nvidia-smi
 # prints domains as 00000000:05:00.0; sysfs (what cardreport matches) uses
 # 0000:05:00.0 — normalize.

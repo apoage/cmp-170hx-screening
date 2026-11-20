@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1 — 2026-11-20
+
+README rewritten as a technical reference: measurement/instrument focus,
+usage + env-var tables, outputs and exit codes up front; sales narrative
+removed repo-wide (README, examples note, script comments, verdict wording).
+
 ## 1.5.0 — 2026-11-20
 
 Second review round: the grader itself was over-confident.
