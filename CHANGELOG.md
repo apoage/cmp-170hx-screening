@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.1.0 — 2026-11-20
+
+Card dossier: the report now tells you what the silicon is worth, not just
+that it works.
+
+- `bin/cardreport.py` — read-only card dossier, stdlib-only: physical VRAM
+  from the FBP defect words (latent GiB + per-HBM-stack table, 96 GiB full
+  bin), latent vs enabled SMs per GPC, NVML BBX lifetime power-on hours,
+  NVLink / MIG-ECC-NVDEC / PCIe generation disable words, SBFE state.
+  Non-GA100 NVIDIA cards are listed but skipped. `--selftest` validates the
+  analytics offline against a reference card; `--ffrows` (idle card) walks
+  the physical fuse rows for FF burn evidence and remaining correction
+  budget. Register addresses from public GA100 research (kate-land, live
+  confirmed by honzapatCZ/cmp170hx-test); no upstream code.
+- `hx-vram-screen.sh` captures the dossier at step [1a] of every screen,
+  logs a one-line summary, and appends the full dossier to the per-card
+  report — buyers see latent capacity next to the pass/fail. Degrades to
+  identity + lifetime hours without root; the screen never fails because of it.
+- `install.sh` runs the dossier selftest at install time.
+
 ## 1.0.0 — 2026-08-31
 
 First public release. The suite as used to screen our own resale batches.

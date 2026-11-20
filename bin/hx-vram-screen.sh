@@ -188,6 +188,47 @@ nvidia-smi -i "$GPU" --query-gpu=name,serial,uuid,vbios_version,pci.bus_id,memor
 say "[1] $(sed -n '2p' "$OUT/01-identity.csv")"
 FREE_MIB="$(nvidia-smi -i "$GPU" --query-gpu=memory.free --format=csv,noheader,nounits)"
 
+# -------------------------------------------------- 1a. CARD DOSSIER
+# Physical silicon (fuse defect words: latent VRAM per HBM stack, latent SMs,
+# NVLink/MIG/ECC/NVDEC potential) + NVML lifetime hours. Read-only BAR0; the
+# idle guard above already established the GPU is quiet. Root gets the fuse
+# reads; without root it degrades to the NVML/identity part only.
+CARDREPORT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cardreport.py"
+if [ -f "$CARDREPORT" ]; then
+    say "[1a] card dossier (physical silicon + lifetime hours)"
+    if sudo -n true 2>/dev/null; then
+        sudo -n python3 "$CARDREPORT" \
+            --out "$OUT/cardreport.md" --json "$OUT/cardreport.json" \
+            >"$OUT/cardreport.console.txt" 2>&1
+    else
+        python3 "$CARDREPORT" \
+            --out "$OUT/cardreport.md" --json "$OUT/cardreport.json" \
+            >"$OUT/cardreport.console.txt" 2>&1
+    fi
+    if [ -f "$OUT/cardreport.json" ]; then
+        python3 - "$OUT/cardreport.json" >> "$OUT/run.log" <<'PYDOSSIER'
+import json, sys
+try:
+    for c in json.load(open(sys.argv[1])):
+        p = c.get("physical") or {}
+        v, cm = p.get("vram", {}), p.get("compute", {})
+        up = c.get("uptime") or {}
+        lat = v.get("latent_gib"); pol = v.get("policy_enabled_gib")
+        if lat is not None:
+            print("[1a] %s: latent %s GiB (policy %s), SMs %s/%s, lifetime %s h"
+                  % (c.get("bdf"), lat, pol,
+                     cm.get("latent_sms"), cm.get("enabled_sms"),
+                     up.get("lifetime_h", "?")))
+        else:
+            print("[1a] %s: fuse words unreachable (dossier partial)" % c.get("bdf"))
+except (OSError, ValueError):
+    print("[1a] cardreport.json unreadable — continuing")
+PYDOSSIER
+    else
+        say "[1a] cardreport failed (see cardreport.console.txt) — continuing"
+    fi
+fi
+
 # ---------------------------------------------- 1b. PROVENANCE CLASSIFICATION
 # Cards pulled from mining deployments frequently carry damaged or blanked
 # onboard inventory: no serial, a wiped InfoROM, a missing board part number.
@@ -439,6 +480,19 @@ $([ "$CUDA" != "not run" ] && echo "- Independent CUDA cross-check: **${CUDA}**"
 Raw logs in \`$(basename "$OUT")/\`, hashed in \`SHA256SUMS\`. Telemetry is the
 full per-sample curve in \`03-telemetry.csv\`.
 EOF
+
+# The card dossier is part of the report: latent capacity is exactly what a
+# buyer paying for silicon (not for the current policy floor) is buying.
+if [ -f "$OUT/cardreport.md" ]; then
+    {
+        echo
+        echo "---"
+        echo
+        cat "$OUT/cardreport.md"
+        echo
+        echo "dossier raw: \`$(basename "$OUT")/cardreport.{md,json}\` (read-only fuse reads)"
+    } >> "$REPORT"
+fi
 
 cp -f "$REPORT" "$LATEST"
 say "report: $LATEST"

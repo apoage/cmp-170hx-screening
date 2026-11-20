@@ -19,7 +19,12 @@ jobs:
           shellcheck -S warning bin/hx-vram-screen.sh install.sh bench-setup/hx-install-unlock.sh
 
       - name: python compile
-        run: python3 -m py_compile bin/hx-thermal-analyze.py bin/hx-dashboard.py bin/hx-tui.py bin/hx-bandwidth.py
+        run: python3 -m py_compile bin/hx-thermal-analyze.py bin/hx-dashboard.py bin/hx-tui.py bin/hx-bandwidth.py bin/cardreport.py
+
+      - name: cardreport selftest
+        # Validates the dossier analytics (defect masks -> latent VRAM/SMs)
+        # against a reference card, no GPU needed.
+        run: python3 bin/cardreport.py --selftest
 
       - name: bandwidth tool exits cleanly without a GPU
         # It must fail with a usable message, not a traceback: the most likely

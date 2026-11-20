@@ -68,6 +68,15 @@ if command -v nvidia-smi >/dev/null 2>&1; then
         || say "NOTE: no CMP 170HX visible. If one is fitted, it is not unlocked yet."
 fi
 
+# ---- 3b. card dossier selftest ---------------------------------------------
+# cardreport.py is stdlib-only; this validates its analytics against a
+# reference card without needing any GPU present.
+if python3 "$HERE/bin/cardreport.py" --selftest >/dev/null 2>&1; then
+    say "cardreport selftest ok (dossier analytics verified offline)"
+else
+    say "WARNING: cardreport selftest FAILED — card dossier output would be suspect"
+fi
+
 # ---- 4. dashboard service (optional) --------------------------------------
 if [ "${1:-}" = "--service" ]; then
     say "installing hx-dashboard.service on port ${HX_PORT:-8097}"
@@ -80,3 +89,4 @@ if [ "${1:-}" = "--service" ]; then
 fi
 
 say "done. Screen a card with:  bash $HERE/bin/hx-vram-screen.sh 15"
+say "      Card dossier alone:  sudo python3 $HERE/bin/cardreport.py"

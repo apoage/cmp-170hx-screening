@@ -16,6 +16,7 @@ $ bash bin/hx-vram-screen.sh 15
 === CMP 170HX screen — serial 1322621098890 — 20260828-094851 — 15 min ===
 [0] idle guard ok — 1 MiB used, full-heap coverage possible
 [1] NVIDIA CMP 170HX, 1322621098890, GPU-b638ea07-…, 92.00.6D.00.0A, 65536 MiB
+[1a] 0000:05:00.0: latent 80 GiB (policy 64), SMs 108/70, lifetime 4164.9 h
 [1b] provenance: DOCUMENTED — serial, board P/N and InfoROM all intact
 [2] Vulkan DEVICE_LOCAL heap: 64.00 GiB
 [3] running memtest_vulkan 15 min with telemetry (test == soak)
@@ -44,6 +45,7 @@ taken on trust from a single vendor tool:
 | The HBM runs at **full speed** | STREAM-style kernels vs a peak derived from the card's own bus width and memory clock | Nothing is looked up from a spec sheet; both operands are read off the device |
 | The memory is **sound** | `memtest_vulkan` pattern test over the whole free heap, on a verified-idle GPU | Coverage is a stated number of GiB, not "whatever the tool grabbed" |
 | The cooling is **intact** | Per-sample telemetry through the run → °C/W for core and HBM, compared against the batch median | Identical workload on every card ⇒ near-identical power ⇒ temperature is a direct read-out of heat transfer |
+| The silicon is **worth its price** | Card dossier: fuse defect words → latent VRAM per HBM stack and latent SM count; NVML counter → lifetime power-on hours | Read from the card's own fuse registers — not the policy floor the driver shows, and not anything the seller configured |
 
 And one it discloses rather than proves: **provenance**. Ex-mining cards often
 have a blanked or damaged InfoROM. That is not a performance defect, but it
@@ -53,13 +55,45 @@ means the card cannot vouch for its own identity, so the report says so under an
 The full reasoning, including what a pass does *not* mean, is in
 **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)**.
 
+## The card dossier
+
+Every report ends with a dossier read straight off the card's fuse registers
+(read-only BAR0 — no commands issued, no driver state touched):
+
+- **Physical VRAM** — the FBP defect words say how much memory the die actually
+  has, per HBM stack, up to the 96 GiB full bin. A card showing 64 GiB to the
+  driver can be an 80 GiB die behind a policy floor — that is silicon you are
+  paying for (or not).
+- **Compute** — latent vs enabled SMs from the GPC/TPC defect and disable
+  words, per GPC.
+- **Lifetime hours** — the driver's cumulative BBX counter, i.e. real power-on
+  history, not a sticker claim.
+- **Features** — NVLink, MIG/ECC/NVDEC and PCIe generation disable words:
+  what the die could do versus what the policy allows.
+- **Burn history** — with `--ffrows` (idle card), the physical fuse-row walk
+  shows whether the rewritable FF rows carry records and how much of the
+  append-only correction budget remains.
+
+It also runs standalone:
+
+```console
+$ sudo python3 bin/cardreport.py            # full dossier, every GA100 card
+$ python3 bin/cardreport.py                 # identity + lifetime hours only
+$ python3 bin/cardreport.py --selftest      # offline analytics validation
+```
+
+Register addresses from public GA100 research (kate-land GA100VFI capture
+data, live-confirmed on CMP 170HX by the honzapatCZ cmp170hx-test project).
+Non-GA100 NVIDIA cards in the box are listed but skipped — the fuse map is
+GA100-only, and applying it anywhere else would print fiction.
+
 ## Quick start
 
 Requires a 170HX that is already unlocked and visible to the driver — that is a
 one-time bench job, see **[bench-setup/](bench-setup/)**.
 
 ```console
-$ git clone https://github.com/YOUR-ORG/cmp-170hx-screening
+$ git clone https://github.com/apoage/cmp-170hx-screening
 $ cd cmp-170hx-screening
 $ bash install.sh --service          # deps + memtest_vulkan + dashboard on :8097
 
@@ -121,6 +155,7 @@ right rather than convenient.
 | | |
 |---|---|
 | `bin/hx-vram-screen.sh` | The screen. One continuous run: memory test *is* the thermal soak |
+| `bin/cardreport.py` | Card dossier: physical VRAM/SM potential from fuse defect words, lifetime power-on hours, feature masks. Stdlib only, read-only |
 | `bin/hx-thermal-analyze.py` | Turns the telemetry curve into °C/W and a repaste/repad verdict |
 | `bin/hx-bandwidth.py` | HBM2e throughput, STREAM-style, as a measured fraction of derived peak |
 | `bin/hx-dashboard.py` | Web UI on `:8097` — batch index, live run, customer-ready export. Stdlib only, read-only |
