@@ -322,8 +322,12 @@ say "[2] Vulkan DEVICE_LOCAL heap: ${HEAP}"
 # over a test report, never a FLEET row, never a verdict.
 if [ "$IDENTIFY" = 1 ]; then
     IDREP="$BASE/results/${SN}-identity.md"
+    # derive our own PCI strings: BUSID/BUS_SHORT are bound later, in the
+    # soak section this mode never reaches
+    BUSID_ID="$(nvidia-smi -i "$GPU" --query-gpu=pci.bus_id --format=csv,noheader | tr -d ' ')"
+    PCI_FULL_ID="$(echo "$BUSID_ID" | sed 's/^00000000:/0000:/')"
+    BUS_SHORT_ID="$(echo "$BUSID_ID" | awk -F: '{print $(NF-1)":"$NF}' | cut -d. -f1)"
     if [ "$DMESG_OK" -eq 1 ]; then
-        PCI_FULL_ID="$(echo "$BUSID" | sed 's/^00000000:/0000:/')"
         "${DMESG_CMD[@]}" -T 2>/dev/null | grep -iE "xid|nvrm|pcie bus error" \
             | grep -iE "${PCI_FULL_ID}|${UUID_FULL:-__none__}" | tail -10 \
             > "$OUT/06-dmesg-history.txt" || :
@@ -336,7 +340,7 @@ if [ "$IDENTIFY" = 1 ]; then
         echo "# CMP 170HX — card identification"
         echo
         echo "**GPU serial:** ${SN}${TAG:+  (shelf tag: ${TAG})}"
-        echo "**GPU UUID:** ${UUID_FULL}   ·   **slot:** PCI ${BUS_SHORT}"
+        echo "**GPU UUID:** ${UUID_FULL}   ·   **slot:** PCI ${BUS_SHORT_ID}"
         echo "**Date:** $(date -u '+%Y-%m-%d %H:%M') UTC"
         echo "**Status: IDENTIFIED — NOT TESTED** (no soak was run; run \`hx 15\` for the acceptance screen)"
         echo
