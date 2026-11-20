@@ -98,6 +98,7 @@ done
 MINS="${1:-12}"
 TAG="${2:-}"
 case "$MINS" in ''|*[!0-9]*) echo "usage: hx-vram-screen.sh [--all|--gpu N] [MINUTES] [TAG] | --rollup"; exit 64 ;; esac
+[ "$MINS" -ge 1 ] || { echo "usage: MINUTES must be >= 1 (0 would never time out)"; exit 64; }
 
 if [ "$ALL" = "1" ]; then
     IDX="$(nvidia-smi --query-gpu=index,name --format=csv,noheader | awk -F, '/CMP 170HX/{gsub(/ /,"",$1); print $1}')"
@@ -191,7 +192,14 @@ if [ "${TOTAL_MIB:-0}" -gt 0 ] && [ "${TOTAL_MIB:-0}" -lt 16000 ]; then
     say "  Screening a locked card proves nothing about the silicon being sold."
     exit 3
 fi
-DMESG_PRE="$(dmesg 2>/dev/null | wc -l)"      # baseline: everything below is history
+# Kernel log access. Ubuntu blocks dmesg for normal users; try plain, then
+# passwordless sudo. If neither works, kernel-error checking reports
+# "not measured" — never a silent zero that reads as "no errors".
+DMESG_CMD=(dmesg)
+DMESG_OK=0
+if dmesg >/dev/null 2>&1; then DMESG_OK=1
+elif sudo -n dmesg >/dev/null 2>&1; then DMESG_CMD=(sudo -n dmesg); DMESG_OK=1; fi
+DMESG_PRE="$("${DMESG_CMD[@]}" 2>/dev/null | wc -l)"   # baseline: below is history
 
 # ------------------------------------------------------------ 1. IDENTITY
 nvidia-smi -i "$GPU" -q > "$OUT/01-nvidia-smi-q.txt" 2>&1
@@ -206,16 +214,22 @@ FREE_MIB="$(nvidia-smi -i "$GPU" --query-gpu=memory.free --format=csv,noheader,n
 # idle guard above already established the GPU is quiet. Root gets the fuse
 # reads; without root it degrades to the NVML/identity part only.
 CARDREPORT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cardreport.py"
+# Scope the dossier to THIS card: on a multi-card bench the buyer's report
+# must not contain the other cards' dossiers, serials and UUIDs. nvidia-smi
+# prints domains as 00000000:05:00.0; sysfs (what cardreport matches) uses
+# 0000:05:00.0 — normalize.
+CARD_BDF="$(awk -F, 'NR==2{b=$5; gsub(/ /,"",b); sub(/^[0-9A-Fa-f]+:/,"",b); print "0000:"b}' \
+    "$OUT/01-identity.csv" 2>/dev/null)"
 if [ -f "$CARDREPORT" ]; then
-    say "[1a] card dossier (physical silicon + lifetime hours)"
+    say "[1a] card dossier (physical silicon + lifetime hours) for ${CARD_BDF:-?}"
     if sudo -n true 2>/dev/null; then
         # shellcheck disable=SC2024  # redirect stays with the invoking user on
         # purpose: the console capture must be owned by the bench user, not root
-        sudo -n python3 "$CARDREPORT" \
+        sudo -n python3 "$CARDREPORT" ${CARD_BDF:+--pci-addr "$CARD_BDF"} \
             --out "$OUT/cardreport.md" --json "$OUT/cardreport.json" \
             >"$OUT/cardreport.console.txt" 2>&1
     else
-        python3 "$CARDREPORT" \
+        python3 "$CARDREPORT" ${CARD_BDF:+--pci-addr "$CARD_BDF"} \
             --out "$OUT/cardreport.md" --json "$OUT/cardreport.json" \
             >"$OUT/cardreport.console.txt" 2>&1
     fi
@@ -336,7 +350,9 @@ nvidia-smi -i "$GPU" \
 SAMPLER=$!
 sleep 6                                    # capture idle baseline before load
 nvidia-smi -i "$GPU" -q > "$OUT/03a-ecc-pre.txt" 2>&1 || :   # ECC counters, before
-timeout -s TERM "${MINS}m" "$MTV" "$MTV_IDX" "$TEST_BYTES" </dev/null > "$OUT/03-memtest_vulkan.txt" 2>&1
+# -k 30: if the tool ignores TERM (or the card wedged the driver), KILL it
+# after 30 s so the run cannot hang the bench for good.
+timeout -k 30 -s TERM "${MINS}m" "$MTV" "$MTV_IDX" "$TEST_BYTES" </dev/null > "$OUT/03-memtest_vulkan.txt" 2>&1
 MTV_RC=$?          # 124 = our time limit ended it, i.e. it ran the WHOLE window
 sleep 4                                    # let the tail of the curve land
 kill "$SAMPLER" 2>/dev/null; wait "$SAMPLER" 2>/dev/null
@@ -357,7 +373,7 @@ if [ -f "$HXVV" ]; then
     # geometry) / FAIL (not fixable), from the error addresses memtest_vulkan
     # itself reports plus the ECC counter delta across the run.
     VRAM_RESULT="$(python3 "$HXVV" "$OUT/03-memtest_vulkan.txt" "$TEST_BYTES" \
-        --rc "${MTV_RC:-1}" \
+        --rc "${MTV_RC:-1}" --mins "$MINS" \
         --pre-q "$OUT/03a-ecc-pre.txt" --post-q "$OUT/03a-ecc-post.txt" 2>&1)"
     VRAM="$(printf '%s\n' "$VRAM_RESULT" | head -1)"
     printf '%s\n' "$VRAM_RESULT" | tail -n +2 > "$OUT/03b-vram-verdict.md"
@@ -366,11 +382,10 @@ elif grep -qiE "ERRORS FOUND|Error found|total errors" "$OUT/03-memtest_vulkan.t
     VRAM=FAIL
 elif grep -q "no any errors, testing PASSed" "$OUT/03-memtest_vulkan.txt"; then
     VRAM=PASS
-elif [ "${MTV_RC:-1}" -eq 124 ] && [ "${COVERED:-0}" -gt 0 ]; then
-    # rc=124 means OUR time limit stopped it, so it tested for the full window
-    # rather than dying early. Summing its reported intervals is not a usable
-    # coverage measure on its own -- it reports every 30 s, so a run is always
-    # undercounted by up to one interval.
+elif [ "${MTV_RC:-1}" -eq 124 ] && [ "${COVERED:-0}" -ge $(( MINS * 60 - 45 )) ]; then
+    # rc=124 means OUR time limit stopped it — and the recorded intervals must
+    # cover the window minus one 30 s report interval + slack, so a tool that
+    # froze 90 s in can no longer read as a pass.
     VRAM=PASS
 else
     VRAM="INCONCLUSIVE"
@@ -402,13 +417,25 @@ fi
 # Only errors raised DURING this run count. Grepping the whole ring buffer
 # reported this reference card as "see kernel log" on the strength of Xids from
 # a PCIe experiment weeks earlier -- a false alarm on every used card.
-dmesg 2>/dev/null | tail -n +$((DMESG_PRE + 1)) > "$OUT/06-dmesg-thisrun.txt"
-grep -iE "xid|nvrm|pcie bus error" "$OUT/06-dmesg-thisrun.txt" > "$OUT/06-errors-thisrun.txt"
-XIDS="$(wc -l < "$OUT/06-errors-thisrun.txt")"
-# Historical entries are kept as context, clearly separated from the test result.
-dmesg -T 2>/dev/null | grep -iE "xid|nvrm|pcie bus error" | tail -40 > "$OUT/06-dmesg-history.txt"
-HIST="$(wc -l < "$OUT/06-dmesg-history.txt")"
-say "[6] kernel errors during this run: ${XIDS}  (pre-existing in log: ${HIST})"
+# Attribute kernel lines to THIS card: on a parallel bench every card would
+# otherwise inherit the others' errors. Xid lines carry the PCI address;
+# NVRM lines may carry the GPU UUID instead — match either.
+PCI_FULL="$(echo "$BUSID" | sed 's/^00000000:/0000:/')"
+if [ "$DMESG_OK" -eq 1 ]; then
+    "${DMESG_CMD[@]}" 2>/dev/null | tail -n +$((DMESG_PRE + 1)) > "$OUT/06-dmesg-thisrun.txt"
+    grep -iE "xid|nvrm|pcie bus error" "$OUT/06-dmesg-thisrun.txt" \
+        | grep -iE "${PCI_FULL}|${UUID_FULL:-__none__}" > "$OUT/06-errors-thisrun.txt"
+    XIDS="$(wc -l < "$OUT/06-errors-thisrun.txt")"
+    "${DMESG_CMD[@]}" -T 2>/dev/null | grep -iE "xid|nvrm|pcie bus error" \
+        | grep -iE "${PCI_FULL}|${UUID_FULL:-__none__}" | tail -40 > "$OUT/06-dmesg-history.txt"
+    HIST="$(wc -l < "$OUT/06-dmesg-history.txt")"
+    say "[6] kernel errors for ${PCI_FULL} during this run: ${XIDS}  (pre-existing in log: ${HIST})"
+else
+    XIDS="not measured"; HIST="not measured"
+    say "[6] kernel log not readable (no dmesg permission; run the screen with"
+    say "    passwordless sudo -n available, or add yourself to the adm group) —"
+    say "    kernel-error checking NOT performed; the report will say so"
+fi
 
 # -------------------------------------------------------------- 7. VERDICT
 VERDICT=PASS
@@ -420,7 +447,19 @@ case "$VRAM" in
     *) VERDICT="INCONCLUSIVE — rerun" ;;
 esac
 [ "$CUDA" = FAIL ] && VERDICT="FAIL — VRAM ERRORS"
-[ "$XIDS" -gt 0 ] && [ "$VERDICT" = PASS ] && VERDICT="PASS — kernel errors during run"
+if [ "$XIDS" != "not measured" ] && [ "$XIDS" -gt 0 ]; then
+    # Fatal Xid classes (fallen-off-bus, MMU, GSP/RM internal, ECC-related):
+    # a run that hit one must never carry a PASS-prefixed verdict.
+    FATAL="$(grep -oiE 'Xid[^0-9]*([0-9]+)' "$OUT/06-errors-thisrun.txt" \
+        | grep -oE '[0-9]+$' | sort -u \
+        | grep -xE '8|13|31|43|44|45|48|58|62|63|64|65|74|79|87|92|94' | tr '\n' ' ')"
+    if [ -n "$FATAL" ]; then
+        case "$VERDICT" in FAIL*) : ;; *)
+            VERDICT="FAIL — FATAL GPU ERROR DURING RUN (Xid ${FATAL})" ;; esac
+    elif [ "$VERDICT" = PASS ]; then
+        VERDICT="PASS — kernel errors during run"
+    fi
+fi
 case "$THERMAL" in
   REPASTE*|REPAD*) [ "$VERDICT" = PASS ] && VERDICT="PASS — SERVICE COOLING" ;;
 esac
@@ -531,5 +570,10 @@ fi
 cp -f "$REPORT" "$LATEST"
 say "report: $LATEST"
 say "raw:    $OUT"
-[ "${VERDICT#FAIL}" != "$VERDICT" ] && exit 1
-exit 0
+# Exit codes are part of the contract for --all and any wrapper script:
+#   0 = PASS-family verdict, 1 = FAIL, 2 = INCONCLUSIVE (never read as a pass)
+case "$VERDICT" in
+    FAIL*) exit 1 ;;
+    INCONCLUSIVE*) exit 2 ;;
+    *) exit 0 ;;
+esac

@@ -404,7 +404,9 @@ def inline(s):
     s = html.escape(s)
     s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
     s = re.sub(r"`(.+?)`", r"<code>\1</code>", s)
-    s = re.sub(r"_(.+?)_", r"<em>\1</em>", s)
+    # whole-word underscores only: a bare _(.+?)_ rule turns fuse-word names
+    # like fbp_defective 0x840 fbp_disable into italic garbage
+    s = re.sub(r"(?<![\w])_([^_\n]+?)_(?![\w])", r"<em>\1</em>", s)
     return s
 
 
