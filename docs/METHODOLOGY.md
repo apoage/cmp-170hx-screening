@@ -14,11 +14,15 @@ answer, that is stated — those are the parts worth copying.
 The CMP 170HX is a GA100 mining card. Three of its properties shape the whole
 method:
 
-**No ECC.** ECC is fused off on this SKU. There is no hardware correction and no
-error counter to read afterwards. On a datacentre card you can run a workload
-and then ask the card how many errors it corrected; here that instrument does
-not exist. **Pattern testing is the only available instrument**, and it detects
-errors rather than correcting them. Every report says so.
+**ECC: off in stock, on with a recent unlock.** The CMP 170HX ships with ECC
+fused off, so a stock card has no hardware correction and no error counter to
+read afterwards. Recent **cmpunlocker (v0.5 and newer) enables DRAM + SRAM
+ECC** on the unlocked card — and when ECC is active, the screen reads the
+corrected/uncorrectable counter delta across the soak and grades it
+(PASS-ECC for corrected single-bit events, FAIL for uncorrectable ones).
+On a card without ECC, **pattern testing is the only available instrument**,
+and it detects errors rather than correcting them. Whichever state the card
+is in, the report says so.
 
 **Passively cooled, no fan sensor.** `fan.speed` reads N/A. The card cannot
 regulate its own temperature and cannot tell you how much air it is getting, so

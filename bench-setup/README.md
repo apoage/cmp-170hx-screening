@@ -88,14 +88,15 @@ See the top-level [README](../README.md).
 The unlock is **[cmpunlocker](https://github.com/amoghmunikote/cmpunlocker)**
 (GPL-2.0) — somebody else's work.
 
-**Pin the commit you validate.** cmpunlocker moves fast and a moving checkout
-can change what lands in your kernel module between two benches. We validated
-upstream commit `88e39ce` (tag `v0.4` line; works against nvidia-open
-610.43.03) — check out that commit before running the installer and re-verify
-after any bump:
+**Get it working first.** Use the current upstream cmpunlocker — recent
+releases (v0.5 and newer) also **enable DRAM+SRAM ECC**, which the screen
+then reads across every soak. Don't pre-emptively pin: you want the fixes,
+not our bench's past. If a newer checkout ever misbehaves on your bench,
+fall back to the last commit you validated (for the record, ours was
+`88e39ce` on the v0.4 line against nvidia-open 610.43.03) and report it:
 
 ```console
-$ git -C cmpunlocker checkout 88e39ce
+$ git -C cmpunlocker checkout <last-known-good>
 ```
 
 **Leave the IOMMU on.** Do not boot with `iommu=pt` on the screening bench:

@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.1 — 2026-11-20
+
+Two claim corrections from bench practice:
+
+- bench-setup is **working-first**: use current upstream cmpunlocker rather
+  than pre-emptively pinning; pinning is the rollback tool, not the default.
+- ECC story updated everywhere: stock 170HX ships ECC fused off, but recent
+  cmpunlocker (v0.5+) **enables DRAM+SRAM ECC** — the screen reads the
+  counter delta across every soak on such cards (PASS-ECC/FAIL grading);
+  pattern testing remains the instrument only when ECC is absent. Post-unlock
+  verification now includes the ECC mode check.
+
 ## 1.3.0 — 2026-11-20
 
 External review round: the tool must never print something more confident

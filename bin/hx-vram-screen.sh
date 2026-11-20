@@ -264,7 +264,7 @@ fi
 # own identity, so we classify it and disclose it rather than quietly shipping.
 #
 # NB: two fields read N/A on a perfectly healthy 170HX and must NOT be flagged —
-#   "ECC Object: N/A"            ECC is fused off on this SKU by design
+#   "ECC Object: N/A"            ECC is fused off in stock (recent cmpunlocker enables it)
 #   "Chassis Serial Number: N/A" the card is not in an enclosure
 Q="$OUT/01-nvidia-smi-q.txt"
 field(){ grep -m1 -E "^[[:space:]]*$1[[:space:]]*:" "$Q" | sed 's/.*: *//' | tr -d '\r'; }
@@ -557,7 +557,7 @@ $(cat "$OUT/04-thermal.md" | sed '/<!--FLEET/d')
 $( [ "$XIDS" != "not measured" ] && echo "GPU-relevant lines during the run: **${XIDS}** (pre-existing for this card in log: ${HIST})." || echo "**Not measured** — the kernel log was not readable from this account; run with passwordless \`sudo -n\` available to include it." )
 
 ## 6. Scope and limits
-- $(grep -m1 "^ECC" "$OUT/03b-vram-verdict.md" 2>/dev/null || echo "**No ECC.** This card ships with ECC fused off, so there is no hardware error correction and no error counter to read afterwards. Pattern testing is the only available instrument; it detects errors rather than correcting them.")
+- $(grep -m1 "^ECC" "$OUT/03b-vram-verdict.md" 2>/dev/null || echo "**ECC not readable on this card.** The 170HX ships with ECC fused off; a recent cmpunlocker (v0.5+) enables DRAM+SRAM ECC, in which case the counters are read across the run. Without counters, pattern testing is the only available instrument; it detects errors rather than correcting them.")
 - A pass means no errors were detected across the tested heap (${COVERAGE_PCT}), at operating
   temperature, over the stated duration. Intermittent faults can evade any
   finite test.
