@@ -27,7 +27,7 @@ GPU 00000000:03:00.0
         Pending                                        : N/A
     Serial Number                                      : XXXXXXXXXXXX
     GPU UUID                                           : GPU-XXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
-    GPU PDI                                            : 0xb5f084f74f47875c
+    GPU PDI                                            : 0xXXXXXXXXXXXXXX
     Minor Number                                       : 0
     VBIOS Version                                      : 92.00.6D.00.0A
     MultiGPU Board                                     : No
@@ -249,13 +249,6 @@ GPU 00000000:03:00.0
             Access Timeout Recovery                    : N/A
             Incorrect Configuration                    : N/A
             Partition Assigned                         : N/A
-    Processes
-        GPU instance ID                   : N/A
-        Compute instance ID               : N/A
-        Process ID                        : 1676
-            Type                          : G
-            Name                          : /usr/lib/xorg/proc
-            Used GPU Memory               : 4 MiB
     Capabilities
         EGM                                            : disabled
 

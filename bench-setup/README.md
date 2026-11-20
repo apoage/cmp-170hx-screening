@@ -97,12 +97,14 @@ not our bench's past. Two caveats:
   our v0.4-era bench validated. If your cmpunlocker checkout declares a
   different required driver, follow ITS requirement, not this script's
   version, and check the screen still runs.
-- **The fusegate probe.** A historical cmpunlocker patch (`0010
-  sec2-hs-fusegate-probe`) could corrupt host RAM. The screen hard-refuses
-  to run against a kernel module carrying it, and the installer checks its
-  exit code — but read what your checkout actually applies. If a newer
-  upstream misbehaves, fall back to the last commit you validated (for the
-  record, ours was `88e39ce` on the v0.4 line) and report it:
+- **The fusegate probe.** A local experimental patch from our own bench
+  work (`0010-sec2-hs-fusegate-probe`, never part of cmpunlocker — it
+  exists nowhere upstream) could corrupt host RAM. No outside user can have
+  it; the guard exists so our own benches can never again boot a module
+  built with it. The screen inspects the loaded module for its marker and
+  hard-refuses. If a newer upstream misbehaves, fall back to the last
+  commit you validated (for the record, ours was `88e39ce` on the v0.4
+  line) and report it:
 
 ```console
 $ git -C cmpunlocker checkout <last-known-good>

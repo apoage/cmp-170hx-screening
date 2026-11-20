@@ -238,8 +238,8 @@ $ curl -s http://127.0.0.1:8097/ | head    # on the bench itself
   or over `ssh -t`.
 
 The page serves the batch index (FLEET), per-run telemetry, the per-card
-reports and a self-contained shareable export; a JSON API lives under
-`/json/`. It is read-only — it cannot start, stop, or alter a run.
+reports and a self-contained shareable export; JSON endpoints: `/api/status`,
+`/api/live`. It is read-only — it cannot start, stop, or alter a run.
 
 ## Scope
 

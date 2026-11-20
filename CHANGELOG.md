@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.6.1 — 2026-11-20
+
+Attribution and robustness corrections.
+
+- 0010-sec2-hs-fusegate-probe was OUR local experimental patch, never part
+  of cmpunlocker (our own postmortem: created locally 2026-08-31, untracked,
+  never upstreamed). The docs and the guard comment wrongly credited it to
+  cmpunlocker and then said its patch corrupts RAM — corrected here and in
+  the docs; earlier entries below still carry the wrong wording and are
+  superseded by this note. ("Verified against the full v0.4 series" meant
+  the marker string is unique versus the whole upstream v0.4 patch set.)
+- The guard now unpacks compressed DKMS modules (.ko.zst/.ko.xz/.ko.gz —
+  plain `strings` on a compressed file finds nothing and silently passed),
+  cross-checks the loaded module's srcversion against the on-disk file, and
+  prints "module provenance: not checked" when it cannot read the module.
+- bench-setup: removed the false "the installer checks its exit code" claim.
+- Fixture scrub finished: GPU PDI (per-chip unique) redacted, Processes
+  block removed. The un-scrubbed v1.5.0 capture remains in git history
+  (343fcc4) — the serial is published deliberately elsewhere (examples/),
+  so history was left alone.
+- README: dashboard JSON endpoints corrected to /api/status and /api/live.
+
 ## 1.6.0 — 2026-11-20
 
 Third review round.

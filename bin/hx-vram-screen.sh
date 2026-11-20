@@ -195,18 +195,39 @@ if [ "${TOTAL_MIB:-0}" -gt 0 ] && [ "${TOTAL_MIB:-0}" -lt 16000 ]; then
     exit 3
 fi
 
-# Module provenance: the historical cmpunlocker patch 0010
-# (sec2-hs-fusegate-probe) loops WPR2 base/size writes + Booter re-exec and
-# CAN CORRUPT HOST RAM. Its marker string is unique to that patch (verified
-# against the full v0.4 series); a module carrying it is a hard stop.
+# Module provenance: 0010-sec2-hs-fusegate-probe was a LOCAL experimental
+# patch from our own bench work (never part of cmpunlocker, exists nowhere
+# upstream) that loops WPR2 base/size writes + Booter re-exec and CAN
+# CORRUPT HOST RAM. The guard exists so our own benches can never boot a
+# module built with it again. The marker string is unique to that patch —
+# upstream builds log plain SEC2_DEBUG lines (e.g. SEC2_DEBUG_HEAP), and
+# the narrower 'SEC2DEBUG: HS ' avoids false hits on them.
+# DKMS often stores modules compressed (.ko.zst/.ko.xz): unpack before
+# grepping, and say "not checked" — never nothing — when unreadable.
 MODPATH="$(modinfo -n nvidia 2>/dev/null)"
-if [ -n "$MODPATH" ] && [ -r "$MODPATH" ]; then
-    FUSEGATE="$(strings "$MODPATH" 2>/dev/null | grep -c 'SEC2_DEBUG: HS ')"
-    if [ "${FUSEGATE:-0}" -gt 0 ]; then
-        say "ABORT: the loaded nvidia module carries the HS fusegate probe marker"
-        say "  (cmpunlocker patch 0010 sec2-hs-fusegate-probe). That patch can"
-        say "  corrupt host RAM. Rebuild from a checkout without it."
-        exit 3
+MODSRC="$(cat /sys/module/nvidia/srcversion 2>/dev/null)"
+if [ -z "$MODPATH" ] || [ ! -r "$MODPATH" ]; then
+    say "module provenance: not checked (no readable module file)"
+else
+    case "$MODPATH" in
+        *.zst) CAT="zstdcat" ;;
+        *.xz)  CAT="xzcat" ;;
+        *.gz)  CAT="gzip -dc" ;;
+        *)     CAT="cat" ;;
+    esac
+    if FUSEGATE="$($CAT "$MODPATH" 2>/dev/null | strings 2>/dev/null | grep -a -c 'SEC2DEBUG: HS ')"; then
+        if [ "${FUSEGATE:-0}" -gt 0 ]; then
+            say "ABORT: the nvidia module carries the HS fusegate probe marker"
+            say "  (local patch 0010-sec2-hs-fusegate-probe — never part of"
+            say "  cmpunlocker). It can corrupt host RAM. Rebuild without it."
+            exit 3
+        fi
+        if [ -n "$MODSRC" ] && [ "$MODSRC" != "$(modinfo -F srcversion nvidia 2>/dev/null)" ]; then
+            say "NOTE: loaded module srcversion differs from the file on disk —"
+            say "  the provenance check ran against the file, not the loaded module"
+        fi
+    else
+        say "module provenance: not checked (module unreadable or decompressor missing)"
     fi
 fi
 # Kernel log access. Ubuntu blocks dmesg for normal users; try plain, then
