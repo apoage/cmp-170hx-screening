@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.6.3 — 2026-11-20
+
+No-device path hardened (fifth review — found live on a rev-ff wedged card).
+
+- nvidia-smi prints failure PROSE ("No devices were found", "Unable to
+  determine the device handle…") on STDOUT, sometimes with exit 0, so the
+  old `[ -n ]` checks accepted it as data: the banner read
+  `serial Nodeviceswerefound` and the idle guard aborted with "GPU not idle
+  (No devices were found MiB used)". Every guard read now requires exit 0
+  AND the right shape (serial = digits, UUID = `GPU-…`, MiB = numeric);
+  `--query-compute-apps` output only counts as apps when it has commas.
+- New `gpu_triage` (exit 4): when no usable device, diagnose from the PCI
+  bus with the same 10de:20b0/20c2/2082 test the unlock installer uses —
+  no card fitted vs. `(rev ff)` fall-off-bus wedge (Xid 79; ~60 s cold
+  power cut — one warm-reboot recovery observed 2026-11-20, noted in the
+  message but not relied on) vs. on the bus with no driver handle.
+- `cardreport.py`: a card on the bus but not enumerated by nvidia-smi is
+  now flagged in the dossier ("?" = UNKNOWN, not zero, with the reason)
+  instead of silently printing bare unknowns.
+- README: exit-code contract now documents 3, 4 and 64 alongside 0/1/2.
+- FATAL, pre-existing at 1.6.2: the report heredoc referenced `${PCI_FULL}`,
+  a variable assigned nowhere — only `PCI_FULL_ID` exists, and only in the
+  `--identify` path. Under `set -u` the `cat > $REPORT` died mid-write
+  (rc=127) while the script continued to a normal exit, so every full
+  screen silently produced NO acceptance report while the FLEET row and the
+  mid-run dossier write made the run look complete. Found live 2026-11-20
+  (run 1322421002720_20261120-184101). `PCI_FULL` is now derived from
+  `BUSID` before the heredoc, with a `:-` fallback in the header line.
+
 ## 1.6.2 — 2026-11-20
 
 Guard logic fix (fourth review): a CLEAN module always read "not checked" —

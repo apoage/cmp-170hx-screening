@@ -368,7 +368,13 @@ def render(card):
           "- model: %s   driver: %s" % (ident.get("name"), ident.get("driver")),
           "- uuid: %s" % ident.get("uuid"),
           "- serial: %s   pci: %s" % (ident.get("serial"), card.get("bdf")),
-          "- vram visible to driver: %s MiB" % ident.get("vram_mib"), ""]
+          "- vram visible to driver: %s MiB" % ident.get("vram_mib")]
+    if ident.get("no_driver_row"):
+        L += ["- NOTE: on the PCI bus but NOT enumerated by nvidia-smi — the card",
+              "  is wedged (lspci 'rev ff' = Xid 79 fall-off; recover with a ~60 s",
+              "  cold power cut) or has no driver handle. '?' above means UNKNOWN,",
+              "  not zero."]
+    L += [""]
     up = card.get("uptime") or {}
     L += ["## uptime telemetry",
           "- driver-recorded active hours: %s h" % up.get("lifetime_h", "unavailable"),
@@ -524,12 +530,19 @@ def nvidia_cards():
             if cls not in (0x03,):
                 continue
             dev_id = open(p + "/device").read().strip()
-            row = by_pci.get(norm_bdf(dev), ["?"] * 8)
-            out.append((dev, row[0].lower(),
-                        {"uuid": row[0], "name": row[2], "serial": row[3],
-                         "driver": row[4], "vram_mib": row[5],
-                         "temp_c": row[6], "power_w": row[7],
-                         "pci_device_id": dev_id},
+            full = by_pci.get(norm_bdf(dev))
+            row = full if full is not None else ["?"] * 8
+            ident = {"uuid": row[0], "name": row[2], "serial": row[3],
+                     "driver": row[4], "vram_mib": row[5],
+                     "temp_c": row[6], "power_w": row[7],
+                     "pci_device_id": dev_id}
+            if full is None:
+                # On the bus but NOT enumerated by nvidia-smi: wedged (lspci
+                # rev ff, Xid 79 fall-off) or no working driver handle. Flag it
+                # so the report says WHY the fields are "?" instead of silently
+                # printing unknowns that read like values.
+                ident["no_driver_row"] = True
+            out.append((dev, row[0].lower(), ident,
                         dev_id in GA100_DEVICES))
         except (OSError, ValueError):
             continue

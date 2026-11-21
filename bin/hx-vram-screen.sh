@@ -144,12 +144,52 @@ fi
 # Identify the card FIRST — every artefact is named after its serial so a report
 # can never be filed against the wrong unit. Pulled mining cards occasionally
 # report no serial, so fall back to the GPU UUID, which is always present.
-SN="$(nvidia-smi -i "$GPU" --query-gpu=serial --format=csv,noheader 2>/dev/null | tr -d ' ')"
-case "$SN" in ''|'[N/A]'|'N/A'|'[Not Supported]')
-    SN="$(nvidia-smi -i "$GPU" --query-gpu=uuid --format=csv,noheader 2>/dev/null | tr -d ' ' | cut -c1-16)"
-    echo "NOTE: card reports no serial — naming output after GPU UUID: $SN" ;;
+#
+# nvidia-smi prints failure PROSE ("No devices were found", "Unable to
+# determine the device handle…") on STDOUT — and in some wedged states with a
+# zero exit code — so neither [ -n ] nor $? alone separates a value from an
+# error. Found live 2026-11-20 on a rev-ff wedged card: the banner read
+# "serial Nodeviceswerefound" and the idle guard aborted on prose. A value is
+# therefore accepted only when the query exited 0 AND its shape is right
+# (serials are digits, UUIDs start "GPU-"); anything else falls through to
+# gpu_triage, which diagnoses from the PCI bus instead of filing a report
+# under laundered error text.
+smi_value() {   # smi_value <query> — print the value, or nothing on any doubt
+    local out rc
+    out="$(nvidia-smi -i "$GPU" --query-gpu="$1" --format=csv,noheader 2>/dev/null)"; rc=$?
+    if [ "$rc" -eq 0 ] && [ -n "$out" ]; then printf '%s' "$out"; fi
+}
+gpu_triage() {  # no usable device — say WHY, from the bus, then exit 4
+    echo "ABORT: the driver cannot see a usable GPU (nvidia-smi: ${1:-unreadable})."
+    local onbus
+    onbus="$(lspci -nn 2>/dev/null | grep -iE '10de:20b0|10de:20c2|10de:2082' || true)"
+    if [ -n "$onbus" ]; then
+        echo "  A CMP 170HX IS on the PCI bus:"
+        printf '%s\n' "$onbus" | sed 's/^/    /'
+        if printf '%s\n' "$onbus" | grep -q '(rev ff)'; then
+            echo "  (rev ff) = the card has fallen off the bus (Xid 79 wedge)."
+            echo "  Recover with a ~60 s cold power cut — a warm reboot has worked"
+            echo "  once (2026-11-20) but is not the reliable path."
+        else
+            echo "  But the driver cannot get a handle — check the driver/unlock"
+            echo "  state (bench-setup/README.md), then rerun."
+        fi
+    else
+        echo "  No CMP 170HX on the PCI bus — fit (and unlock) a card first:"
+        echo "  bench-setup/README.md."
+    fi
+    exit 4
+}
+SN="$(smi_value serial | tr -d ' ')"
+case "$SN" in
+    *[!0-9]*|'')            # absent, error prose, or a genuine N/A
+        SN="$(smi_value uuid | tr -d ' ' | cut -c1-16)" ;;
 esac
-[ -n "$SN" ] || { echo "ABORT: cannot read serial or UUID — is the GPU visible to the driver?"; exit 4; }
+case "$SN" in
+    GPU-*)      echo "NOTE: card reports no serial — naming output after GPU UUID: $SN" ;;
+    '')         gpu_triage "no output" ;;
+    *[!0-9]*)   gpu_triage "identity not readable" ;;
+esac
 SN="$(printf '%s' "$SN" | tr -cd 'A-Za-z0-9._-')"     # filesystem-safe
 
 # Serial collision guard. Refurbished / reflashed mining cards can carry blank
@@ -157,7 +197,8 @@ SN="$(printf '%s' "$SN" | tr -cd 'A-Za-z0-9._-')"     # filesystem-safe
 # other's report -- the batch would look complete while one card was never
 # actually recorded. The GPU UUID is unique per physical device, so if a report
 # already exists under this serial for a DIFFERENT card, disambiguate.
-UUID_FULL="$(nvidia-smi -i "$GPU" --query-gpu=uuid --format=csv,noheader 2>/dev/null | tr -d ' ')"
+UUID_FULL="$(smi_value uuid | tr -d ' ')"
+case "$UUID_FULL" in GPU-*) ;; *) UUID_FULL="" ;; esac   # prose/empty is not a UUID
 if [ -f "$BASE/results/${SN}.md" ] && [ -n "$UUID_FULL" ] \
    && ! grep -qF "$UUID_FULL" "$BASE/results/${SN}.md" 2>/dev/null; then
     SN="${SN}-$(printf '%s' "$UUID_FULL" | sed 's/^GPU-//' | cut -c1-8)"
@@ -176,8 +217,12 @@ say "=== CMP 170HX screen — serial ${SN}${TAG:+ (tag: $TAG)} — ${STAMP} — 
 
 # --------------------------------------------------------------- 0. GUARD
 APPS="$(nvidia-smi -i "$GPU" --query-compute-apps=pid,process_name,used_memory --format=csv,noheader 2>/dev/null)"
-USED="$(nvidia-smi -i "$GPU" --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null)"
-if [ -n "$APPS" ] || [ "${USED:-0}" -gt 512 ]; then
+case "$APPS" in *","*) : ;; *) APPS="" ;; esac   # real rows have commas; prose does not
+USED="$(smi_value memory.used | tr -dc '0-9')"
+# No number means no PROOF of idleness — which includes "no device": the
+# whole-free-heap rule cannot be verified, so diagnose rather than guess.
+[ -n "$USED" ] || gpu_triage "memory.used unreadable"
+if [ -n "$APPS" ] || [ "$USED" -gt 512 ]; then
     say "ABORT: GPU not idle (${USED} MiB used). Coverage would be partial:"
     say "${APPS:-（memory allocated without a visible process）}"
     exit 2
@@ -186,8 +231,9 @@ say "[0] idle guard ok — ${USED} MiB used, whole-free-heap coverage possible"
 
 # A locked card (stock 8/10 GiB) is not the product being sold, and its heap
 # is not the heap a buyer receives. The unlock is a precondition, not optional.
-TOTAL_MIB="$(nvidia-smi -i "$GPU" --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | tr -dc '0-9')"
-if [ "${TOTAL_MIB:-0}" -gt 0 ] && [ "${TOTAL_MIB:-0}" -lt 16000 ]; then
+TOTAL_MIB="$(smi_value memory.total | tr -dc '0-9')"
+[ -n "$TOTAL_MIB" ] || gpu_triage "memory.total unreadable"
+if [ "$TOTAL_MIB" -gt 0 ] && [ "$TOTAL_MIB" -lt 16000 ]; then
     say "ABORT: card reports ${TOTAL_MIB} MiB total — it is LOCKED (stock 8/10 GiB)."
     say "  Install CMPUnlocker FIRST: bash bench-setup/hx-install-unlock.sh"
     say "  (upstream: https://github.com/amoghmunikote/cmpunlocker), COLD BOOT, then rerun."
@@ -221,7 +267,8 @@ nvidia-smi -i "$GPU" -q > "$OUT/01-nvidia-smi-q.txt" 2>&1
 nvidia-smi -i "$GPU" --query-gpu=name,serial,uuid,vbios_version,pci.bus_id,memory.total,driver_version \
     --format=csv > "$OUT/01-identity.csv" 2>&1
 say "[1] $(sed -n '2p' "$OUT/01-identity.csv")"
-FREE_MIB="$(nvidia-smi -i "$GPU" --query-gpu=memory.free --format=csv,noheader,nounits)"
+FREE_MIB="$(smi_value memory.free | tr -dc '0-9')"
+[ -n "$FREE_MIB" ] || gpu_triage "memory.free unreadable"
 
 # -------------------------------------------------- 1a. CARD DOSSIER
 # Physical silicon (fuse defect words: latent VRAM per HBM stack, latent SMs,
@@ -575,6 +622,15 @@ IFS=',' read -r p_core p_hbm cw_core cw_hbm _ _ _ _ _ <<< "$FLEETLINE"
 echo "${SN},${STAMP},${VERDICT},${PROVENANCE},${VRAM},${THERMAL},${cw_core},${cw_hbm},${p_core},${p_hbm},${BW}" >> "$FLEET"
 
 # --------------------------------------------------------------- 8. REPORT
+# PCI address for the report header, normalised to 0000:bb:dd.f. The
+# identify-only path derives its own copy (PCI_FULL_ID) early; a full run
+# reaches this point via the soak section, which binds BUSID at [3]. Found
+# live 2026-11-20: the heredoc below referenced ${PCI_FULL} — a variable
+# assigned NOWHERE — so under `set -u` the `cat` died (rc=127, "unbound
+# variable"), the acceptance report was silently NOT written (the FLEET row
+# and the mid-run dossier write survived, masking it), and the script
+# carried on to a normal exit as if nothing had happened.
+PCI_FULL="$(printf '%s' "${BUSID:-}" | sed 's/^00000000:/0000:/')"
 cat > "$REPORT" <<EOF
 # CMP 170HX — VRAM & thermal acceptance report
 
@@ -638,7 +694,7 @@ precisely so a partial pass cannot be mistaken for a full one.
 ## 5. Thermal
 $(cat "$OUT/04-thermal.md" | sed '/<!--FLEET/d')
 
-## 5b. Kernel log (this card: ${PCI_FULL})
+## 5b. Kernel log (this card: ${PCI_FULL:-unknown})
 $( [ "$XIDS" != "not measured" ] && echo "GPU-relevant lines during the run: **${XIDS}** (pre-existing for this card in log: ${HIST})." || echo "**Not measured** — the kernel log was not readable from this account; run with passwordless \`sudo -n\` available to include it." )
 
 ## 6. Scope and limits

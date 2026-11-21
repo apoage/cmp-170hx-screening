@@ -138,7 +138,9 @@ $HX_BASE/results/
 ```
 
 Exit codes are a contract for wrappers and `--all`: **0** PASS-family,
-**1** FAIL, **2** INCONCLUSIVE.
+**1** FAIL, **2** INCONCLUSIVE, **3** bench refusal (locked card / module
+provenance), **4** no usable device (absent or wedged — diagnosed from the
+PCI bus), **64** usage.
 
 ### Memory throughput
 
